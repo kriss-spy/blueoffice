@@ -17,22 +17,33 @@ import {
   type ProofMotion,
 } from "../../shared/scene";
 
-export function resolveAvatarClip(clips: AnimationClip[], motion: ProofMotion) {
-  const name = motion === "missing" ? "Absent_Clip" : proofAvatar.clips[motion];
-  const requested = clips.find((clip) => clip.name === name);
-  const clip =
-    requested ?? clips.find((clip) => clip.name === proofAvatar.clips.idle);
+export type AvatarMotion = ProofMotion | "seated";
+export function resolveAvatarClip(
+  clips: AnimationClip[],
+  motion: AvatarMotion,
+  mapping: Partial<Record<AvatarMotion, string>> = proofAvatar.clips,
+) {
+  const name = motion === "missing" ? undefined : mapping[motion];
+  const requested = name ? clips.find((clip) => clip.name === name) : undefined;
+  const clip = requested ?? clips.find((clip) => clip.name === mapping.idle);
   if (!clip)
     throw new Error(
       "The standing idle clip is missing. Reload a validated character pack.",
     );
   return {
     clip,
-    diagnostic: requested ? "" : `${name} unavailable · showing standing idle`,
+    diagnostic: requested
+      ? ""
+      : `${name ?? `${motion} mapping`} unavailable · showing standing idle`,
   };
 }
 
 export interface AvatarAsset {
+  anchors?: {
+    feet: [number, number, number];
+    nameplate: [number, number, number];
+  };
+  clips?: Partial<Record<AvatarMotion, string>>;
   gltf: GLTF;
   scale: number;
   offset: [number, number, number];

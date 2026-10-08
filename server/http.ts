@@ -1,3 +1,5 @@
+import { CharacterRegistry, AssetError } from "./assets.js";
+import { assetRefSchema } from "../shared/assets.js";
 import { MODEL_IDS } from "../shared/routes.js";
 import {
   createServer,
@@ -54,14 +56,14 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
   res.end(JSON.stringify(body));
 };
 
-async function body(req: IncomingMessage): Promise<unknown> {
+async function body(req: IncomingMessage, limit = 64_000): Promise<unknown> {
   if (req.headers["content-type"]?.split(";")[0] !== "application/json")
     throw new OfficeError("Commands require JSON content.", 415);
   let content = "",
     bytes = 0;
   for await (const chunk of req) {
     bytes += Buffer.byteLength(chunk);
-    if (bytes > 64_000)
+    if (bytes > limit)
       throw new OfficeError("Command exceeds the size limit.", 413);
     content += chunk;
   }
@@ -72,7 +74,11 @@ async function body(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-export function officeServer(office: Office, assets = resolve("dist")) {
+export function officeServer(
+  office: Office,
+  assets = resolve("dist"),
+  characters?: CharacterRegistry,
+) {
   const sessions = new Map<string, string>();
   const clients = new Map<
     ServerResponse,
@@ -198,6 +204,67 @@ export function officeServer(office: Office, assets = resolve("dist")) {
         }
         if (url.pathname === "/api/snapshot" && req.method === "GET") {
           send(res, 200, office.snapshot());
+          return;
+        }
+        if (
+          url.pathname === "/api/characters" &&
+          req.method === "GET" &&
+          characters
+        ) {
+          send(res, 200, characters.list());
+          return;
+        }
+        if (
+          url.pathname === "/api/characters/import" &&
+          req.method === "POST" &&
+          characters
+        ) {
+          send(res, 201, await characters.import(await body(req, 44_000_000)));
+          return;
+        }
+        if (
+          url.pathname === "/api/characters/review" &&
+          req.method === "POST" &&
+          characters
+        ) {
+          send(res, 200, characters.review(await body(req)));
+          return;
+        }
+        const characterRoute =
+          /^\/api\/characters\/([a-z0-9._-]+)\/([a-z0-9._-]+)\/([a-f0-9]{64})(?:\/files\/(.+))?$/.exec(
+            url.pathname,
+          );
+        if (characterRoute && req.method === "GET" && characters) {
+          const [, assetId, version, sha256, path] = characterRoute;
+          const ref = assetRefSchema.parse({ assetId, version, sha256 });
+          if (!path) send(res, 200, characters.get(ref));
+          else {
+            const bytes = characters.file(ref, path);
+            const mime: Record<string, string> = {
+              ".glb": "model/gltf-binary",
+              ".bin": "application/octet-stream",
+              ".png": "image/png",
+              ".jpg": "image/jpeg",
+              ".jpeg": "image/jpeg",
+            };
+            res.writeHead(200, {
+              "Content-Type": mime[extname(path)] ?? "application/octet-stream",
+              "Cache-Control": "no-store",
+            });
+            res.end(bytes);
+          }
+          return;
+        }
+        const avatarRoute = /^\/api\/agents\/([a-f0-9-]{36})\/avatar$/.exec(
+          url.pathname,
+        );
+        if (avatarRoute && req.method === "POST" && characters) {
+          const input = z
+            .object({ ref: assetRefSchema.nullable() })
+            .strict()
+            .parse(await body(req));
+          if (input.ref) characters.assignable(input.ref);
+          send(res, 200, office.assignAvatar(avatarRoute[1], input.ref));
           return;
         }
         if (url.pathname === "/api/agents" && req.method === "POST") {
@@ -361,10 +428,15 @@ export function officeServer(office: Office, assets = resolve("dist")) {
       }
       if (error instanceof z.ZodError)
         send(res, 400, {
-          error:
-            "The command has invalid fields. Check the form and try again.",
+          error: req.url?.startsWith("/api/characters/")
+            ? `Invalid character pack: ${error.issues[0]?.path.join(".")} — ${error.issues[0]?.message}`
+            : "The command has invalid fields. Check the form and try again.",
         });
-      else if (error instanceof OfficeError || error instanceof ProfileError)
+      else if (
+        error instanceof OfficeError ||
+        error instanceof ProfileError ||
+        error instanceof AssetError
+      )
         send(res, error.status, { error: error.message });
       else
         send(res, 500, {

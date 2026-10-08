@@ -9,12 +9,14 @@ import {
 } from "../../shared/presentation";
 import {
   defaultDesks,
-  proofAvatar,
   workstation,
   worldAnchor,
   type Point,
 } from "../../shared/scene";
-import { loadProofAvatar, disposeAvatar, type AvatarAsset } from "./avatar";
+import { assetKey } from "../../shared/assets";
+import { useCharacters } from "./characters";
+import { CharacterLibrary } from "./CharacterLibrary";
+import { OfficeLighting } from "./OfficeLighting";
 import {
   Avatar,
   Camera,
@@ -51,9 +53,8 @@ export function OfficeScene({
   select: (id: string) => void;
   focusRequest: (agentId: string, requestId: string) => void;
 }) {
-  const [asset, setAsset] = useState<AvatarAsset>();
-  const [assetError, setAssetError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const loaded = useCharacters(agents.map((a) => a.avatar));
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [command, setCommand] = useState<CameraCommand>({
     action: "reset",
     id: 0,
@@ -61,7 +62,6 @@ export function OfficeScene({
   const [metrics, setMetrics] = useState<Metrics>({ avatars: {} });
   const liveMetrics = useRef<Metrics>({ avatars: {} });
   const markers = useRef<(HTMLButtonElement | null)[]>([]);
-  const generation = useRef(0);
   const tracker = useRef(new CompletionTracker());
   const [cues, setCues] = useState<CompletionCues>({});
   const [reducedMotion, setReducedMotion] = useState(
@@ -103,53 +103,35 @@ export function OfficeScene({
     );
     return () => clearTimeout(timer);
   }, [cues]);
-  useEffect(
-    () => () => {
-      generation.current++;
-    },
-    [],
-  );
-  useEffect(
-    () => () => {
-      if (asset) disposeAvatar(asset.gltf);
-    },
-    [asset],
-  );
-  const open = async (file?: File) => {
-    if (!file) return;
-    const token = ++generation.current;
-    setLoading(true);
-    setAssetError("");
-    try {
-      const next = await loadProofAvatar(file);
-      if (token !== generation.current) {
-        disposeAvatar(next.gltf);
-        return;
-      }
-      setAsset(next);
-    } catch (error) {
-      if (token === generation.current) setAssetError((error as Error).message);
-    } finally {
-      if (token === generation.current) setLoading(false);
-    }
-  };
   const occupants = agents.map((agent, i) => {
     const desk = defaultDesks.find((desk) => desk.id === agent.deskId);
     const position: Point = desk
       ? worldAnchor(workstation.anchors.standing, desk.position, desk.rotation)
       : [-4 + i, 0, 3.4];
-    return { agent, desk, position, view: presentAgent(agent, connected) };
+    const entry = agent.avatar ? loaded[assetKey(agent.avatar)] : undefined;
+    return {
+      agent,
+      desk,
+      position,
+      view: presentAgent(agent, connected),
+      asset: entry?.asset,
+      diagnostic:
+        entry?.error ??
+        (!agent.avatar
+          ? agent.avatarId === "unassigned"
+            ? "No character assigned"
+            : "Character version missing"
+          : entry?.asset
+            ? ""
+            : "Loading character…"),
+    };
   });
   const isCueActive = (id: string, view: ReturnType<typeof presentAgent>) =>
     view.canCelebrate && cues[id]?.key === view.terminalKey;
   const visibleDesks = defaultDesks.filter(
     (desk, i) => i < 2 || agents.some((agent) => agent.deskId === desk.id),
   );
-  const missingClips = asset
-    ? Object.values(proofAvatar.clips).filter(
-        (name) => !asset.gltf.animations.some((clip) => clip.name === name),
-      )
-    : [];
+  const selectedCharacter = occupants.find((o) => o.agent.id === selected);
   const camera = (action: CameraCommand["action"]) =>
     setCommand((c) => ({ action, id: c.id + 1 }));
   return (
@@ -163,38 +145,9 @@ export function OfficeScene({
               : "Add an assistant to bring the office to life."}
           </p>
         </div>
-        <details className="scene-asset-controls">
-          <summary>Character preview</summary>
-          <div>
-            <p>
-              {asset
-                ? "Yuuka local preview. Saved character assignments are unchanged."
-                : "Character pack not loaded. Labeled placeholders preserve live status."}
-            </p>
-            <label className="asset-open">
-              {loading ? "Opening…" : "Open proof GLB"}
-              <input
-                aria-label="Open proof GLB"
-                type="file"
-                accept=".glb"
-                disabled={loading}
-                onChange={(e) => {
-                  const file = e.currentTarget.files?.[0];
-                  e.currentTarget.value = "";
-                  void open(file);
-                }}
-              />
-            </label>
-            <p>
-              Open the normalized Yuuka file prepared by the avatar-proof guide.
-              Preview files stay in this browser.
-            </p>
-            {asset && (
-              <button onClick={() => setAsset(undefined)}>Clear preview</button>
-            )}
-            {assetError && <p role="alert">{assetError}</p>}
-          </div>
-        </details>
+        <button disabled={!connected} onClick={() => setLibraryOpen(true)}>
+          Characters
+        </button>
       </div>
       <div className="live-room">
         <SceneBoundary>
@@ -210,20 +163,7 @@ export function OfficeScene({
               </p>
             }
           >
-            <color attach="background" args={["#eaf2f6"]} />
-            <ambientLight intensity={1.6} />
-            <hemisphereLight args={["#edfaff", "#b8a78d", 1]} />
-            <directionalLight
-              position={[4, 10, 8]}
-              intensity={2.4}
-              castShadow
-              shadow-mapSize={[2048, 2048]}
-              shadow-camera-left={-8}
-              shadow-camera-right={8}
-              shadow-camera-top={8}
-              shadow-camera-bottom={-8}
-              shadow-normalBias={0.03}
-            />
+            <OfficeLighting />
             <Camera command={command} metrics={liveMetrics} />
             <Room />
             {visibleDesks.map((desk) => (
@@ -240,7 +180,7 @@ export function OfficeScene({
                 }}
               />
             ))}
-            {occupants.map(({ agent, position, desk, view }) =>
+            {occupants.map(({ agent, position, desk, view, asset }) =>
               asset ? (
                 <Avatar
                   key={agent.id}
@@ -279,9 +219,12 @@ export function OfficeScene({
             <Labels
               markers={markers}
               anchors={[
-                ...occupants.map(
-                  ({ position }) =>
-                    [position[0], position[1] + 1.85, position[2]] as Point,
+                ...occupants.map(({ position, asset, desk }) =>
+                  worldAnchor(
+                    asset?.anchors?.nameplate ?? [0, 1.85, 0],
+                    position,
+                    desk?.rotation ?? 0,
+                  ),
                 ),
                 [-2.2, 2, -2.8],
               ]}
@@ -291,7 +234,7 @@ export function OfficeScene({
           </Canvas>
         </SceneBoundary>
         <div className="scene-markers">
-          {occupants.map(({ agent, view, desk }, i) => (
+          {occupants.map(({ agent, view, desk, diagnostic }, i) => (
             <div key={agent.id}>
               <button
                 ref={(el) => {
@@ -312,6 +255,15 @@ export function OfficeScene({
                   <small>{view.label}</small>
                   {view.detail && <small>{view.detail}</small>}
                   {!desk && <small>Workstation missing</small>}
+                  {diagnostic && (
+                    <small className="character-diagnostic" title={diagnostic}>
+                      {diagnostic.startsWith("Loading")
+                        ? "Loading character…"
+                        : agent.avatarId === "unassigned"
+                          ? "No character assigned"
+                          : "Character unavailable"}
+                    </small>
+                  )}
                 </span>
               </button>
             </div>
@@ -328,12 +280,6 @@ export function OfficeScene({
         </div>
       </div>
       <div className="live-scene-bottom">
-        {missingClips.length > 0 && (
-          <p role="status">
-            Missing clips: {missingClips.join(", ")}. Standing idle is used
-            where available. Reload a validated character pack.
-          </p>
-        )}
         <nav aria-label="Scene camera">
           <button aria-label="Zoom out" onClick={() => camera("out")}>
             −
@@ -350,9 +296,11 @@ export function OfficeScene({
           <button onClick={() => camera("reset")}>Reset view</button>
         </nav>
         <span>
-          {asset
-            ? "Local character preview · standing pose"
-            : "Character assets missing · placeholders shown"}
+          {selectedCharacter?.diagnostic
+            ? `${selectedCharacter.agent.name}: ${selectedCharacter.diagnostic}`
+            : occupants.some((o) => o.asset)
+              ? "Saved character assignments · standing pose"
+              : "Character placeholders shown"}
         </span>
       </div>
       <div className="room-attention" aria-label="Room attention">
@@ -387,10 +335,13 @@ export function OfficeScene({
         hidden
         data-office-scene={JSON.stringify({
           camera: metrics.camera,
-          assets: asset ? proofAvatar.id : "missing",
-          agents: occupants.map(({ agent, view, desk }) => ({
+          assets: occupants.filter((o) => o.asset).map((o) => o.agent.avatar),
+          avatars: metrics.avatars,
+          agents: occupants.map(({ agent, view, desk, diagnostic }) => ({
             id: agent.id,
             deskId: desk?.id,
+            avatar: agent.avatar,
+            diagnostic,
             label: view.label,
             work: agent.work,
             requests: view.requests.map((request) => request.id),
@@ -400,6 +351,12 @@ export function OfficeScene({
           })),
         })}
       />
+      {libraryOpen && (
+        <CharacterLibrary
+          agent={agents.find((a) => a.id === selected)}
+          close={() => setLibraryOpen(false)}
+        />
+      )}
     </section>
   );
 }

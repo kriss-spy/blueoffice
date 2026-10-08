@@ -169,3 +169,52 @@ console.log(
     quaternionSamples,
   }),
 );
+
+// A separate folder contains only importable files; inventory reports remain outside it.
+const packDirectory = join(directory, "character-pack");
+await mkdir(packDirectory, { recursive: true });
+await writeFile(join(packDirectory, "Yuuka.normalized.glb"), normalized);
+await writeFile(
+  join(packDirectory, "manifest.json"),
+  JSON.stringify(
+    {
+      schemaVersion: 1,
+      assetId: "yuuka.original",
+      version: "525ae0fa-normalized-v1",
+      name: "Yuuka (Original)",
+      model: "Yuuka.normalized.glb",
+      files: [
+        {
+          path: "Yuuka.normalized.glb",
+          sha256: hash(normalized),
+          bytes: normalized.length,
+        },
+      ],
+      coordinates: {
+        unit: "meter",
+        up: "Y",
+        forward: "+Z",
+        scale: 1.397777530912693,
+        offset: [-0.02541823437215, -0.0013601750587, 0.01937136300278],
+      },
+      anchors: { feet: [0, 0, 0], nameplate: [0, 1.85, 0] },
+      capabilities: { standing: true, seated: false },
+      clips: { idle: "Cafe_Idle", walk: "Cafe_Walk", react: "Cafe_Reaction" },
+      provenance: {
+        source: inventory.provenance.sourceUrl,
+        creator: "Unverified; source uploaded by lihaohong6",
+        rightsOwner: "Unverified",
+        permissionEvidence: null,
+        redistributionAllowed: null,
+      },
+      knownLimitations: [
+        "Standing café clips only; no verified seated or typing animation.",
+        "Native face layers use morph weights and MASK materials; do not replace or hide them.",
+        "Walk is previewable; office pathfinding is not implemented.",
+        "Redistribution permission is unknown. Local import does not approve public distribution.",
+      ],
+    },
+    null,
+    2,
+  ),
+);
