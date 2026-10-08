@@ -1,18 +1,39 @@
 # BlueOffice
 
-A planned local browser office for Hermes agents, inspired by Blue Archive's in-game café: chibi avatars, desk/computer furniture, default 2.5D view, live status bubbles/motion, side chat, office overview, and session activity.
+A local browser office for Hermes agents, inspired by Blue Archive's in-game café. The first runnable slice provides a persistent agent roster, chat, task controls, and question/permission cards. The 2.5D room and character workflows are still being built; see the [v1 beta status](docs/STATUS.md).
 
-Implementation has started with a reproducible, isolated installed-Hermes protocol harness. The browser application is not yet implemented; see the [v1 beta status](docs/STATUS.md).
+## Run
 
-Run the foundation checks on Linux with Hermes and bubblewrap installed:
+Requires Linux, Python 3, Node.js 22.13+ (tested with 22.17.1), and the supported installed Hermes revision listed in the [compatibility report](docs/validation/hermes-contract.md).
 
 ```sh
-python3 scripts/hermes_probe.py
-python3 -m unittest discover -s tests -v
+npm ci
+npm run build
+npm start
 ```
 
-The harness uses disposable profiles and a mock provider inside a private network/process namespace. It makes no live model call. See the [compatibility evidence and limitations](docs/validation/hermes-contract.md).
+Open the loopback URL printed by the server (default `http://127.0.0.1:4310`). Add an assistant with an existing absolute workspace directory, start it, and send a task. `BLUEOFFICE_PORT` changes the port; `BLUEOFFICE_DATA` changes the office data directory (default `.blueoffice`). Always start through `npm start` so the server holds its exclusive data lease.
 
-Start with the [planning-pack index](docs/README.md), then the [PRD](docs/PRD.md) and [implementation plan](docs/IMPLEMENTATION-PLAN.md). Original references: [RESOURCES.md](RESOURCES.md).
+Live mode creates a dedicated native Hermes profile per agent. It reads `~/.cli-proxy-api/.api-key` server-side and routes `glm-5.3-flash` through `http://127.0.0.1:8317/v1`. It never edits CLIProxyAPI configuration. Closing the browser keeps agents running; Ctrl-C stops the server and its owned runtimes. Restarting after a crash marks prior activity unknown and never resends commands. A new start creates a new native conversation; explicit history resume is a later ticket.
 
-The [Blue Archive capture](capture/blue-archive/START-HERE.md) adds an online design/behavior reference, 12 publisher guide images, asset metadata, and an isolated runnable study specimen. Its placeholder café/combat demonstrations are research artifacts; the BlueOffice application is not yet implemented.
+For an offline, visibly labeled demonstration with no model calls:
+
+```sh
+BLUEOFFICE_DATA=/tmp/blueoffice-demo npm start -- --fixture
+```
+
+Try “check the workspace”, “ask question”, “ask batch”, “ask approval”, or “slow task” followed by Interrupt. Fixture mode is explicit and is never a fallback for live failures.
+
+## Verify
+
+```sh
+npm test
+npm run build
+python3 -m unittest discover -s tests -v
+python3 scripts/hermes_probe.py
+python3 scripts/hermes_probe.py --suite office --output artifacts/office-runtime
+```
+
+The installed-runtime probes require bubblewrap. They use disposable profiles and a synthetic provider inside a private network/process namespace, with no live model calls. See [owned runtime/chat evidence](docs/validation/owned-chat.md) and [native protocol evidence](docs/validation/hermes-contract.md). Full GLM/Muse route acceptance, advanced human-input handling, durable replay, visual gates, and release verification remain open.
+
+Start with the [planning-pack index](docs/README.md), [PRD](docs/PRD.md), and [implementation plan](docs/IMPLEMENTATION-PLAN.md). Original references: [RESOURCES.md](RESOURCES.md). The [Blue Archive capture](capture/blue-archive/START-HERE.md) contains design research and an isolated study specimen.

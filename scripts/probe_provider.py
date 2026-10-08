@@ -5,7 +5,7 @@ import threading
 
 
 class MockProvider:
-    def __init__(self):
+    def __init__(self, port=0):
         self.calls = []
         owner = self
 
@@ -71,7 +71,7 @@ class MockProvider:
                 except (BrokenPipeError, ConnectionResetError):
                     pass
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def __enter__(self):
