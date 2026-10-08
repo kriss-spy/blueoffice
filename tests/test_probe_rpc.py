@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -42,6 +43,20 @@ sys.stdin.read()
         gateway = self.peer("pass")
         with self.assertRaisesRegex(RpcError, "stdout closed"):
             gateway.event("message.complete")
+
+    def test_busy_stream_cannot_extend_deadline(self):
+        gateway = self.peer('''
+import json,sys
+print(json.dumps({"jsonrpc":"2.0","method":"ready"}),flush=True)
+for i in range(20000):
+    print(json.dumps({"jsonrpc":"2.0","method":"noise","params":{"i":i}}),flush=True)
+sys.stdin.read()
+''')
+        gateway.wait(lambda f: f.get("method") == "ready")
+        start = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            gateway.wait(lambda f: (time.sleep(0.0001), False)[1], timeout=0.01)
+        self.assertLess(time.monotonic() - start, 0.25)
 
     def test_ignored_shutdown_requires_reported_force(self):
         gateway = self.peer('''

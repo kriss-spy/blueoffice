@@ -24,7 +24,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("fixtures/hermes"))
     args = parser.parse_args()
     report = json.loads((args.input / "report.json").read_text())
-    if report.get("passed") is not True or not report.get("module_probe"):
+    if report.get("passed") is not True or report.get("runner_completed") is not True or not report.get("module_probe"):
         raise RuntimeError("Only a complete passing probe can replace published evidence")
     installation = report["installation"]
     replacements = sorted([(value, f"${key.upper()}") for key, value in installation.items() if key != "revision"],

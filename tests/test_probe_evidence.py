@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 
@@ -13,6 +14,20 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/hermes"
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_failed_discovery_revokes_previous_passing_evidence(self):
+        project = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            report.write_text(json.dumps({"passed": True, "runner_completed": True, "module_probe": {"old": True}}))
+            failed = subprocess.run([sys.executable, str(project / "scripts/hermes_probe.py"),
+                "--launcher", "/nonexistent/blueoffice-test-hermes", "--output", directory], capture_output=True)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(json.loads(report.read_text())["passed"])
+            publish = subprocess.run([sys.executable, str(project / "scripts/save_probe_evidence.py"),
+                "--input", directory, "--output", str(Path(directory) / "published")], capture_output=True)
+            self.assertNotEqual(publish.returncode, 0)
+            self.assertFalse((Path(directory) / "published").exists())
+
     def test_published_frames_replay_without_losing_requests(self):
         files = list(FIXTURES.glob("*/trace.jsonl"))
         self.assertTrue(files, "Run the isolated harness and save its evidence first")

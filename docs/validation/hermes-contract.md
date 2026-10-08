@@ -14,11 +14,11 @@ python3 scripts/save_probe_evidence.py
 python3 -m unittest discover -s tests -v
 ```
 
-The runner obtains the trusted interpreter and source root using `hermes --print-runtime-command`, reads the installed PM dependency selection, and records the Git revision and gateway source hashes. It does not guess a `.venv` path. Other launcher/dependency layouts fail with a diagnostic until supported.
+The runner obtains the trusted interpreter and source root using `hermes --print-runtime-command`, reads the installed PM dependency selection and effective profile home with native helpers, and records the Git revision and gateway source hashes. It does not guess a `.venv` path. The discovered home is recorded only in private evidence and replaced with `$PROFILE_HOME` when publishing. This read-only discovery does not launch that profile. Other launcher/dependency layouts fail with a diagnostic until supported.
 
 Hermes and a deterministic HTTP mock run together inside a private network, PID and IPC namespace. Only runtime/source/dependency directories are mounted read-only; temporary profiles and workspaces are created from scratch. The host Hermes data directory and CLIProxyAPI configuration/key are not mounted. Environment variables are allowlisted and the only provider key is synthetic. The mock exercises actual Hermes agent/tool/streaming code; it does not replace `AIAgent` or the RPC dispatcher. Lazy dependency installation is disabled. There is no unisolated fallback.
 
-`artifacts/hermes-contract/` contains the full synthetic trace, stderr and machine-specific report. The publication script requires a passing report and writes a compact trace and redacted report to [the revision-specific fixtures](../../fixtures/hermes/f1247d2e0146/). It excludes repeated activation snapshots and full configuration replies from the trace. Installed source paths are replaced with tokens. These fixtures contain synthetic prompts, not user conversations.
+`artifacts/hermes-contract/` contains the full synthetic trace, stderr and machine-specific report. Each attempt invalidates old success evidence before discovery and locks its output directory against concurrent runs. Publication requires both passing checks and confirmed successful runner exit. The publication script writes a compact trace and redacted report to [the revision-specific fixtures](../../fixtures/hermes/f1247d2e0146/). It excludes repeated activation snapshots and full configuration replies from the trace; system prompts and reasoning fields are redacted. Installed source paths are replaced with tokens. These fixtures contain synthetic prompts, not user conversations.
 
 ## Capability matrix
 

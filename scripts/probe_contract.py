@@ -39,7 +39,7 @@ def main():
                           "platform_toolsets": {"cli": ["clarify", "terminal"]},
                           "terminal": {"cwd": str(profile / "workspace"), "backend": "local"},
                           "approvals": {"mode": "manual", "timeout": 10},
-                          "clarify": {"timeout": 3}, "mcp_servers": {}, "blueoffice_unknown": {"keep": True}}
+                          "clarify": {"timeout": 10}, "mcp_servers": {}, "blueoffice_unknown": {"keep": True}}
                 # JSON is valid YAML; avoids adding a dependency to the harness.
                 if not (profile / "config.yaml").exists():
                     (profile / "config.yaml").write_text(json.dumps(config))
@@ -100,6 +100,8 @@ def main():
             assert "error" in invalid
             a.answer(batch, {"answers": {questions[1]["qid"]: "Blue"}})
             finished(a, sid)
+            batch_result = a.event("tool.complete", sid)["params"]["payload"]["result"]
+            assert [r["user_response"] for r in batch_result["responses"]] == ["Birch", "Blue"]
             # A late answer must not create another task or resolve a different request.
             late = a.request("clarify.lock", {"request_id": batch["id"], "question_id": questions[0]["qid"], "answer": "Oak"})
             assert late["status"] == "expired"
@@ -116,6 +118,8 @@ def main():
             assert any(r["id"] == approval["id"] for r in snapshot["open_requests"])
             a.answer(approval, {"choice": "deny"})
             finished(a, sid)
+            denial = a.event("tool.complete", sid)["params"]["payload"]["result"]
+            assert denial["status"] == "blocked" and denial["exit_code"] == -1
             assert (sentinel / "keep.txt").read_text() == "must survive denial"
             checks.append("approval outer/inner IDs, advertised choices, replay and denial prevents execution")
 

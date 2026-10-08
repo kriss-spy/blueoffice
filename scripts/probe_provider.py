@@ -45,7 +45,7 @@ class MockProvider:
                 finish = "stop"
                 if tool:
                     message = {"role": "assistant", "content": None, "tool_calls": [
-                        {"id": "call-probe", "type": "function", "function":
+                        {"id": f"call-probe-{len(owner.calls)}", "type": "function", "function":
                          {"name": tool[0], "arguments": json.dumps(tool[1])}}]}
                     finish = "tool_calls"
                 try:

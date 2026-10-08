@@ -51,16 +51,25 @@ class Gateway:
 
     def wait(self, predicate, timeout=40):
         deadline = time.monotonic() + timeout
+        def timed_out():
+            return TimeoutError(f"{self.label}: RPC wait timed out; stderr: {self.diagnostics[-8:]}")
+        for index, frame in enumerate(self.saved):
+            if time.monotonic() >= deadline:
+                raise timed_out()
+            if predicate(frame):
+                return self.saved.pop(index)
         while True:
-            for index, frame in enumerate(self.saved):
-                if predicate(frame):
-                    return self.saved.pop(index)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise timed_out()
             try:
-                frame = self.incoming.get(timeout=max(0, deadline - time.monotonic()))
+                frame = self.incoming.get(timeout=remaining)
             except queue.Empty:
-                raise TimeoutError(f"{self.label}: RPC wait timed out; stderr: {self.diagnostics[-8:]}") from None
+                raise timed_out() from None
             if isinstance(frame, Exception):
                 raise frame
+            if predicate(frame):
+                return frame
             self.saved.append(frame)
 
     def request(self, method, params=None, allow_error=False):
