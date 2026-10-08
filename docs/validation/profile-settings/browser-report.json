@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "url": "http://127.0.0.1:46621",
+  "checks": [
+    "setup persona/tools readback; model/name/persona saved for next start",
+    "live runtime blocks settings save",
+    "external change conflict and explicit reload; stale second editor rejected",
+    "explicit adoption acknowledgement, private credentials retained, second agent created",
+    "browser refresh retains profile; mobile editor fits; keyboard close"
+  ],
+  "browser": "153.0.8010.12",
+  "pageErrors": []
+}

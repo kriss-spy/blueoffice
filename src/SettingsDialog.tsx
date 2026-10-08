@@ -8,6 +8,14 @@ import type {
 import type { RouteStatus } from "../shared/routes";
 import { command } from "./api";
 
+const sectionLabels: Record<string, string> = {
+  workspace: "Workspace",
+  model: "Model",
+  soul: "Persona",
+  toolsets: "Tool groups",
+  approvalMode: "Command approvals",
+};
+
 export function SettingsDialog({
   agent,
   routes,
@@ -140,8 +148,8 @@ export function SettingsDialog({
           </button>
         </div>
         <p>
-          Profile defaults apply at the next start. Existing conversations keep
-          their current settings until the runtime stops.
+          The name updates immediately. Stop the runtime before saving profile
+          defaults; those changes apply the next time you start it.
         </p>
         {!agent ? (
           <>
@@ -309,7 +317,7 @@ export function SettingsDialog({
                 <ul>
                   {Object.entries(result.sections).map(([field, outcome]) => (
                     <li key={field}>
-                      {field}: {outcome?.message}
+                      {sectionLabels[field] ?? field}: {outcome?.message}
                     </li>
                   ))}
                 </ul>
