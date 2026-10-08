@@ -54,9 +54,9 @@ def event(kind, payload=None):
         seq += 1
         data = {"type": kind, "session_id": session, "seq": seq, "payload": payload or {}}
         replay_events.append(data)
-        if scenario == "truncated" and busy and kind != "recovery.trigger":
+        if scenario in ("truncated", "interim-gap") and busy and kind not in ("recovery.trigger", "message.interim"):
             return
-        if scenario == "truncated" and kind == "recovery.trigger":
+        if scenario in ("truncated", "interim-gap") and kind == "recovery.trigger":
             truncated_through = seq - 1
             replay_events[:] = [data]
         if scenario == "replay-order" and kind == "message.delta" and not omitted_delta:
@@ -82,6 +82,8 @@ def finish(generation):
 
 def task(prompt, generation):
     global busy
+    if scenario == "interim-gap":
+        event("message.interim", {"text": "I will wait for permission before continuing.", "already_streamed": False})
     event("thinking.delta", {"text": "HIDDEN_REASONING_CANARY"})
     event("session.info", {"running": True, "system_prompt": "PRIVATE_SYSTEM_CANARY"})
     event("tool.start", {"tool_id": f"tool-{generation}", "name": "terminal", "args": {"api_key": "TOOL_SECRET_CANARY"}})
@@ -151,9 +153,9 @@ def task(prompt, generation):
             params = {"session_id": session, "prompt": "PRIVATE_SECRET_CANARY", "command": "PRIVATE_SUDO_COMMAND", "display_name": "PRIVATE_VAULT_NAME"}
         frame = {"id": generation if "numeric" in lower else f"srq-{generation}", "method": kind, "params": params}
         requests[frame["id"]] = frame
-        if scenario not in ("missing-request", "truncated"):
+        if scenario not in ("missing-request", "truncated", "interim-gap"):
             write(frame)
-        if scenario == "truncated":
+        if scenario in ("truncated", "interim-gap"):
             event("recovery.trigger")
         if "expire" in lower or "resolve approval" in lower:
             def expire():

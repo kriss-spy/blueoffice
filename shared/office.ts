@@ -70,6 +70,11 @@ export interface Conversation {
 }
 export interface OfficeAgent {
   replay?: { epoch: string; sequence: number };
+  terminal?: {
+    epoch: string;
+    turnId: string;
+    outcome: "completed" | "interrupted" | "failed" | "unknown";
+  };
   settingsVersion?: number;
   configRevision?: string;
   configHistory?: {

@@ -960,7 +960,7 @@ test("native recovery reorders missing chunks before redaction and never duplica
   assert.equal(current().freshness, "current");
 });
 
-for (const scenario of ["missing-request", "truncated"]) {
+for (const scenario of ["missing-request", "truncated", "interim-gap"]) {
   test(`native ${scenario} recovery restores the exact waiting permission without invented completion`, async (t) => {
     const { office, agent, current, target, directory } = await setup(
       t,
@@ -983,6 +983,19 @@ for (const scenario of ["missing-request", "truncated"]) {
     const stable = JSON.stringify(request);
     await office.reconcileAll();
     assert.equal(JSON.stringify(attention(current())[0]), stable);
+    assert.notEqual(
+      current().work,
+      "completed",
+      "A complete interim segment is not a terminal turn outcome",
+    );
+    if (scenario === "interim-gap") {
+      assert.equal(
+        current().messages.find((m) => m.role === "assistant")!.state,
+        "complete",
+      );
+      assert.equal(current().work, "unknown");
+      assert.equal(current().terminal, undefined);
+    }
     await office.reply(agent.id, request.id, randomUUID(), target(), {
       choice: "deny",
     });

@@ -1100,17 +1100,9 @@ export class Office extends EventEmitter {
       };
       agent.freshness = "current";
       if (!gap && agent.work === "unknown") {
-        const terminal = agent.messages
-          .filter((m) => m.turnId === turn && m.role === "assistant")
-          .at(-1);
-        if (
-          terminal &&
-          ["complete", "failed", "interrupted"].includes(terminal.state)
-        )
-          agent.work =
-            terminal.state === "complete"
-              ? "completed"
-              : (terminal.state as "failed" | "interrupted");
+        const terminal = agent.terminal;
+        if (terminal?.epoch === agent.epoch && terminal.turnId === turn)
+          agent.work = terminal.outcome;
       }
       this.changed(agent, "requests.reconciled");
     } catch (error) {
@@ -1240,6 +1232,7 @@ export class Office extends EventEmitter {
                 ? "failed"
                 : "unknown";
         agent.work = outcome;
+        agent.terminal = { epoch: agent.epoch!, turnId: agent.turnId, outcome };
         const message = this.assistant(agent);
         message.text = text(payload.text, Infinity) || message.text;
         message.chunkIds.push(key);
