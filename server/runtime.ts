@@ -8,6 +8,8 @@ import { RouteRegistry, routingConfig, HERMES_REVISION } from "./routes.js";
 import { type ModelId, type RouteStatus } from "../shared/routes.js";
 import type { Launch } from "./rpc.js";
 import { profileOperation } from "./profiles.js";
+import { nativeHistory } from "./history-native.js";
+import type { HistoryProfile, HistoryReadResult } from "../shared/history.js";
 import type {
   ProfileDefaults,
   ProfileRequest,
@@ -27,6 +29,11 @@ export interface RuntimeFactory {
   ): Promise<{ profileName: string; profileHome: string }>;
   launch(agent: OfficeAgent): Promise<Launch>;
   profile(request: ProfileRequest): Promise<ProfileSnapshot | SettingsResult>;
+  historyProfiles(): Promise<HistoryProfile[]>;
+  historyRead(
+    profile: HistoryProfile,
+    request: { storedSessionId?: string },
+  ): Promise<HistoryReadResult>;
 }
 export interface Installation {
   source: string;
@@ -52,6 +59,24 @@ export class HermesRuntime implements RuntimeFactory {
   async profile(request: ProfileRequest) {
     if (request.values) this.registry.require(request.values.model);
     return profileOperation(await this.discover(), request);
+  }
+  async historyProfiles() {
+    return nativeHistory<HistoryProfile[]>(await this.discover(), {
+      action: "profiles",
+    });
+  }
+  async historyRead(
+    profile: HistoryProfile,
+    request: { storedSessionId?: string },
+  ) {
+    const secret = await readFile(this.keyPath, "utf8")
+      .then((key) => key.trim())
+      .catch(() => undefined);
+    return nativeHistory<HistoryReadResult>(
+      await this.discover(),
+      { ...request, profileHome: profile.home },
+      secret,
+    );
   }
   private discover(): Promise<Installation> {
     if (this.testInstallation) return Promise.resolve(this.testInstallation);
