@@ -93,6 +93,7 @@ export interface OfficeAgent {
   createdAt: string;
 }
 export interface Snapshot {
+  pendingAdoptions?: { name: string; profileHome: string }[];
   routes: RouteStatus[];
   revision: number;
   agents: OfficeAgent[];

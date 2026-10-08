@@ -50,6 +50,41 @@ export class Office extends EventEmitter {
     return work.finally(() => this.mutations.delete(work));
   }
   private settingsWriters = new Set<string>();
+  private activeAdoptions = new Set<string>();
+  private recovering?: Promise<void>;
+  recoverAdoptions(): Promise<void> {
+    return (this.recovering ??= this.recoverPendingAdoptions().finally(() => {
+      this.recovering = undefined;
+    }));
+  }
+  private async recoverPendingAdoptions() {
+    for (const intent of this.store.adoptions()) {
+      if (this.activeAdoptions.has(intent.profileHome)) continue;
+      try {
+        if (!this.agents.has(intent.id)) {
+          const snapshot = (await this.factory.profile({
+            action: "read",
+            profileHome: intent.profileHome,
+          })) as ProfileSnapshot;
+          if (snapshot.ownerId !== intent.id) continue;
+          this.registerAgent(
+            intent.id,
+            intent.name,
+            intent.workspace,
+            intent.model,
+            {
+              profileHome: snapshot.profileHome,
+              profileName: snapshot.profileName,
+            },
+            snapshot.revision,
+          );
+        }
+        this.store.finishAdoption(intent.profileHome);
+      } catch {
+        /* Keep the durable intent visible for explicit inspection/retry. */
+      }
+    }
+  }
   constructor(
     private store: OfficeStore,
     readonly factory: RuntimeFactory,
@@ -100,6 +135,9 @@ export class Office extends EventEmitter {
       agents: structuredClone([...this.agents.values()]),
       mode: this.factory.mode,
       routes: this.factory.routes(),
+      pendingAdoptions: this.store
+        .adoptions()
+        .map(({ name, profileHome }) => ({ name, profileHome })),
     };
   }
   private get(id: string) {
@@ -182,11 +220,13 @@ export class Office extends EventEmitter {
       error: null,
       createdAt: now(),
     };
+    this.store.save(agent, "agent.created", randomUUID());
     this.agents.set(id, agent);
-    this.changed(agent, "agent.created");
+    this.emit("change");
     return structuredClone(agent);
   }
   async inspectProfile(profileHome: string) {
+    await this.recoverAdoptions();
     return this.factory.profile({
       action: "read",
       profileHome,
@@ -307,26 +347,67 @@ export class Office extends EventEmitter {
     if (this.closing || this.agents.size >= 8)
       throw new OfficeError("This office cannot add another agent right now.");
     values = settingsSchema.parse(values);
-    const id = randomUUID();
-    const result = (await this.factory.profile({
-      action: "adopt",
-      profileHome,
-      agentId: id,
-      expectedRevision,
-      values,
-      acknowledgeOwnership,
-    })) as SettingsResult;
-    if (!result.ok) return { agent: null, result };
-    const snapshot = result.snapshot;
-    const agent = this.registerAgent(
-      id,
-      name,
-      snapshot.values.workspace,
-      values.model,
-      { profileHome: snapshot.profileHome, profileName: snapshot.profileName },
-      snapshot.revision,
-    );
-    return { agent, result };
+    if (!acknowledgeOwnership)
+      throw new OfficeError(
+        "Confirm the managed single-writer policy before adopting this profile.",
+      );
+    const inspected = await this.inspectProfile(profileHome);
+    profileHome = inspected.profileHome;
+    if (inspected.managed)
+      throw new OfficeError(
+        "This canonical profile is already assigned to an office agent.",
+      );
+    if (inspected.revision !== expectedRevision)
+      throw new OfficeError(
+        "Profile changed outside this editor. Reload and review before adopting.",
+      );
+    if (inspected.liveOwner)
+      throw new OfficeError(
+        "This profile has a live owner. Stop it before adopting.",
+      );
+    if (this.activeAdoptions.has(profileHome))
+      throw new OfficeError("This profile adoption is already in progress.");
+    const previous = this.store
+      .adoptions()
+      .find((intent) => intent.profileHome === profileHome);
+    const id = previous?.id ?? randomUUID();
+    this.activeAdoptions.add(profileHome);
+    try {
+      // Persist the owner association before the helper can publish its ownership marker.
+      this.store.beginAdoption({
+        id,
+        name,
+        profileHome,
+        model: values.model,
+        workspace: values.workspace,
+      });
+      const result = (await this.factory.profile({
+        action: "adopt",
+        profileHome,
+        agentId: id,
+        expectedRevision,
+        values,
+        acknowledgeOwnership,
+      })) as SettingsResult;
+      if (!result.ok) return { agent: null, result };
+      const snapshot = result.snapshot;
+      const agent = this.registerAgent(
+        id,
+        name,
+        snapshot.values.workspace,
+        values.model,
+        {
+          profileHome: snapshot.profileHome,
+          profileName: snapshot.profileName,
+        },
+        snapshot.revision,
+      );
+      this.store.finishAdoption(profileHome);
+      this.emit("change");
+      return { agent, result };
+    } finally {
+      this.activeAdoptions.delete(profileHome);
+    }
   }
   private assertCurrent(agent: OfficeAgent, target: Target): RpcChild {
     if (

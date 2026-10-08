@@ -96,6 +96,17 @@ class SettingsTests(unittest.TestCase):
             with self.assertRaisesRegex(module.ProfileError, 'live owner'):
                 module.run(self.request(), 'fixture', self.root)
 
+    def test_manual_approvals_refuse_dotenv_bypass_without_modifying_it(self):
+        env = self.home / '.env'
+        env.write_text('HERMES_YOLO_MODE=1\nPRIVATE_TOKEN=retained\n')
+        before = module.revision(self.home)
+        with self.assertRaisesRegex(module.ProfileError, 'HERMES_YOLO_MODE'):
+            module.run(self.request(), 'fixture', self.root)
+        self.assertEqual(module.revision(self.home), before)
+        request = self.request()
+        request['values']['approvalMode'] = 'off'
+        self.assertTrue(module.run(request, 'fixture', self.root)['ok'])
+
     def test_adoption_requires_acknowledgement_and_one_persistent_owner(self):
         (self.home / '.blueoffice-agent.json').unlink()
         request = self.request()

@@ -149,6 +149,7 @@ export class HermesRuntime implements RuntimeFactory {
       HERMES_PYTHON_SRC_ROOT: installation.source,
       HERMES_DISABLE_LAZY_INSTALLS: "1",
       HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S: "1",
+      HERMES_YOLO_MODE: "0",
       BLUEOFFICE_PROXY_KEY: key,
       OPENAI_BASE_URL: "http://127.0.0.1:8317/v1",
     };
@@ -166,7 +167,7 @@ export class HermesRuntime implements RuntimeFactory {
       );
     } catch {
       throw new Error(
-        "The profile's effective model, API family, credential path or retry policy no longer matches its verified BlueOffice route. Restore its managed routing settings before starting.",
+        "The profile's effective model, API family, credential path, retry or approval policy no longer matches its verified BlueOffice route. Restore managed settings and remove conflicting approval environment overrides before starting.",
       );
     }
     return {

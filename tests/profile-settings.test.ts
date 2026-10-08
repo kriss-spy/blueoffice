@@ -144,3 +144,62 @@ test("adoption is explicit, preserves private existing data, and cannot duplicat
   );
   assert.equal(office.snapshot().agents.length, 2);
 });
+
+for (const fault of ["database", "helper-response"] as const) {
+  test(`adoption intent recovers ownership after lost ${fault} without replaying configuration`, async (t) => {
+    const { root, office, store, factory, agent } = await setup(t);
+    const home = join(root, "profiles", `recover-${fault}`);
+    await mkdir(home);
+    await writeFile(
+      join(home, "config.yaml"),
+      await readFile(join(agent.profileHome, "config.yaml")),
+    );
+    await writeFile(join(home, "SOUL.md"), "Existing private persona");
+    const candidate = await office.inspectProfile(home);
+    const save = store.save.bind(store),
+      profile = factory.profile.bind(factory);
+    if (fault === "database")
+      store.save = () => {
+        throw new Error("Injected database outage");
+      };
+    else
+      factory.profile = async (request) => {
+        const result = await profile(request);
+        if (request.action === "adopt")
+          throw new Error("Injected lost helper response");
+        return result;
+      };
+    await assert.rejects(
+      office.adopt(
+        "Recovered",
+        home,
+        candidate.revision,
+        candidate.values,
+        true,
+      ),
+      /Injected/,
+    );
+    assert.equal(store.adoptions().length, 1);
+    assert.equal(store.agents().length, 1);
+    store.save = save;
+    factory.profile = profile;
+    await office.shutdown();
+    const configBefore = await readFile(join(home, "config.yaml"), "utf8");
+    const restarted = new Office(store, factory);
+    await restarted.recoverAdoptions();
+    assert.equal(store.adoptions().length, 0);
+    assert.equal(restarted.snapshot().agents.length, 2);
+    const recovered = restarted
+      .snapshot()
+      .agents.find((a) => a.name === "Recovered")!;
+    assert.equal(
+      (await restarted.settings(recovered.id)).ownerId,
+      recovered.id,
+    );
+    assert.equal(
+      await readFile(join(home, "config.yaml"), "utf8"),
+      configBefore,
+    );
+    await restarted.shutdown();
+  });
+}

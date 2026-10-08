@@ -102,11 +102,24 @@ try {
   await writeFile(join(adoptHome, "SOUL.md"), "Adopted persona");
   await writeFile(
     join(adoptHome, ".env"),
-    "PRIVATE_EXISTING_TOKEN=profile-private-canary\n",
+    "HERMES_YOLO_MODE=1\nPRIVATE_EXISTING_TOKEN=profile-private-canary\n",
   );
-  const candidate = await office.inspectProfile(adoptHome);
+  let candidate = await office.inspectProfile(adoptHome);
   assert.equal(candidate.managed, false);
   assert.doesNotMatch(JSON.stringify(candidate), /profile-private-canary/);
+  await assert.rejects(
+    office.adopt("Beta", adoptHome, candidate.revision, candidate.values, true),
+    /HERMES_YOLO_MODE/,
+  );
+  assert.match(
+    await readFile(join(adoptHome, ".env"), "utf8"),
+    /HERMES_YOLO_MODE=1/,
+  );
+  await writeFile(
+    join(adoptHome, ".env"),
+    "PRIVATE_EXISTING_TOKEN=profile-private-canary\n",
+  );
+  candidate = await office.inspectProfile(adoptHome);
   const adoption = await office.adopt(
     "Beta",
     adoptHome,
@@ -131,6 +144,14 @@ try {
   );
   await office.start(b.id);
   await office.stop(b.id);
+  await writeFile(
+    join(adoptHome, ".env"),
+    "HERMES_YOLO_MODE=1\nPRIVATE_EXISTING_TOKEN=profile-private-canary\n",
+  );
+  await assert.rejects(office.start(b.id), /approval policy/);
+  checks.push(
+    "native dotenv approval bypass rejected before adoption and before runtime launch",
+  );
   assert.match(
     await readFile(join(adoptHome, ".env"), "utf8"),
     /profile-private-canary/,

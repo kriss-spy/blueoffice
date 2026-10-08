@@ -18,6 +18,7 @@ export function App() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [adoptionPath, setAdoptionPath] = useState("");
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -203,6 +204,25 @@ export function App() {
               </button>
             </div>
           ) : null}
+          {snapshot.pendingAdoptions?.map((pending) => (
+            <div
+              key={pending.profileHome}
+              className="error-banner"
+              role="status"
+            >
+              <p>
+                Adoption of {pending.name} needs review: {pending.profileHome}
+              </p>
+              <button
+                onClick={() => {
+                  setAdoptionPath(pending.profileHome);
+                  setSettingsFor("adopt");
+                }}
+              >
+                Review adoption
+              </button>
+            </div>
+          ))}
           {agent ? (
             <section className="agent-overview" aria-label="Selected agent">
               <div className="agent-badge">
@@ -346,6 +366,7 @@ export function App() {
           routes={snapshot.routes}
           close={() => setSettingsFor(null)}
           adopted={select}
+          initialPath={adoptionPath}
         />
       ) : null}
       <dialog ref={dialog} className="create-dialog">

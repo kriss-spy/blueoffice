@@ -12,19 +12,38 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sys
 import tempfile
 
 MODELS = {"glm-5.3-flash", "muse-spark-1.3-contributor"}
 TOOLS = {"terminal", "file", "clarify"}
-REVISION_FILES = ("config.yaml", "SOUL.md", "profile.yaml", ".env", "auth.json", ".blueoffice-agent.json")
+REVISION_FILES = ("config.yaml", "SOUL.md", "profile.yaml", ".env", ".op.env", "auth.json", ".blueoffice-agent.json")
 OVERRIDES = ("api_key", "base_url", "key_env", "api_key_env", "key_cmd", "extra_headers",
              "extra_body", "request_overrides", "fallback_chain", "fallback_providers")
 
 
 class ProfileError(Exception):
     pass
+
+
+def validate_approval_policy(home, config, fixture=False):
+    if config.get("approvals", {}).get("mode", "manual") != "manual":
+        return
+    for name in (".env", ".op.env"):
+        path = home / name
+        if not path.exists():
+            continue
+        if fixture:
+            defined = bool(re.search(r"(?m)^\s*(?:export\s+)?HERMES_YOLO_MODE\s*=", path.read_text(encoding="utf-8-sig")))
+        else:
+            from agent.secret_scope import load_env_file
+            defined = "HERMES_YOLO_MODE" in load_env_file(path)
+        if defined:
+            raise ProfileError("Remove HERMES_YOLO_MODE from the profile environment before selecting manual approvals. The environment file has not been changed.")
+    if config.get("secrets"):
+        raise ProfileError("Manual approvals cannot yet be verified with external environment sources. Disable that profile integration before adopting it.")
 
 
 def atomic_write(path, data):
@@ -195,6 +214,7 @@ class Settings:
         deep_merge(wanted, {"terminal": {"cwd": str(workspace), "backend": "local"},
                            "platform_toolsets": {"cli": values["toolsets"]},
                            "approvals": {"mode": values["approvalMode"]}})
+        validate_approval_policy(self.home, wanted, self.fixture)
         # Recheck after parsing/validation, immediately before native publication.
         if request["expectedRevision"] != revision(self.home):
             raise ProfileError("Profile changed during validation. Reload settings.")

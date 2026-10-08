@@ -13,17 +13,19 @@ export function SettingsDialog({
   routes,
   close,
   adopted,
+  initialPath = "",
 }: {
   agent?: OfficeAgent;
   routes: RouteStatus[];
   close: () => void;
   adopted: (id: string) => void;
+  initialPath?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [snapshot, setSnapshot] = useState<ProfileSnapshot>();
   const [values, setValues] = useState<ProfileSettings>();
   const [name, setName] = useState(agent?.name ?? "");
-  const [path, setPath] = useState("");
+  const [path, setPath] = useState(initialPath);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SettingsResult>();

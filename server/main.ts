@@ -12,6 +12,7 @@ const office = new Office(
   store,
   fixture ? new FixtureRuntime(data) : new HermesRuntime(),
 );
+await office.recoverAdoptions();
 const app = officeServer(office);
 const port = Number(process.env.BLUEOFFICE_PORT ?? 4310);
 if (!Number.isInteger(port) || port < 0 || port > 65535)
