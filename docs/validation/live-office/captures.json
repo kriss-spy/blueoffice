@@ -1,23 +1,23 @@
 [
   {
     "path": "artifacts/live-office/1280x720-resized.png",
-    "sha256": "bfaa7601f27449d7ff648d4a6c64619bcc03299f12e2a7e93c8d6572093e6e8f"
+    "sha256": "25d88bc956282dd5bd0c8bfe394d6117a665971f367a4418805cb58cb17c1879"
   },
   {
     "path": "artifacts/live-office/1280x720.png",
-    "sha256": "a81cafb2209b7e0ca5d7de7fbbb28d78de855d5585dbf4ec9bbb501f92b8d638"
+    "sha256": "18695ead38d4024cfaa09c4bd3b3e885cb1760506a5105125a4079d9f4414151"
   },
   {
     "path": "artifacts/live-office/1440x900-resized.png",
-    "sha256": "d6bf5beaef539e2d1cb2107d2a9073bb04761621fe6b099d62ec3ac9313301ca"
+    "sha256": "bb655106bb4eb55d0d569075b588afdb9773263060f48c7c894b96df5332c986"
   },
   {
     "path": "artifacts/live-office/1440x900.png",
-    "sha256": "6666b3c26150b2be33976d9269dcf5e5d9dd9634e67e7d8bdbdb8e325291d3c8"
+    "sha256": "44d3924e6adc1f0bdc7750fd5dd74ffd3e65da24c8a695e9d353adfe528da7dc"
   },
   {
     "path": "artifacts/live-office/completion-cue.png",
-    "sha256": "0a906c27f908ccbda21fc2640bc0bd607126af36d544492a842801d6490dac85"
+    "sha256": "6b41f1768ca691a6f73c1a572533847a4dba723442c9ba390048f8b30bab2488"
   },
   {
     "path": "artifacts/live-office/live-completed.png",
@@ -29,23 +29,23 @@
   },
   {
     "path": "artifacts/live-office/missing-assets-after-reload.png",
-    "sha256": "aa26527b615c6be82494a34d24a6728f29f11e158116ea26a1dbd0c28c9180fa"
+    "sha256": "2988b9438f493c784bc837bbd3f0e7e5b9129124bbeaf6060a600956d8656663"
   },
   {
     "path": "artifacts/live-office/new-turn.png",
-    "sha256": "510dc181b3e81561b310632c0e0a6c6f5753663cd8eeebbac1293c117e4f8fa2"
+    "sha256": "ad021b4e3db83f25fa44ae96567130509334b2443e234675cf083cb7901e7d29"
   },
   {
     "path": "artifacts/live-office/obscured-avatar-attention.png",
-    "sha256": "85f3e51f7ae4d6eb7a4da758ae6ba374eb4bad6372c78c6c7e54568aa3eed7d5"
+    "sha256": "06ceee132592aad616eb1ed65068e8e44b4a65bd33c92e987c7f59091b3acaf0"
   },
   {
     "path": "artifacts/live-office/permission.png",
-    "sha256": "aab5f5b0eb7bf40a7287ebeb8b5c719705fba2fa41b14ae14d47d62789e360ed"
+    "sha256": "457d7d156ed6d2534f56d5bc0acaa35b33518732394e606e13c983cf0b184358"
   },
   {
     "path": "artifacts/live-office/state-disconnected.png",
-    "sha256": "990ab369eb33e15d2fdc7235ed256f814b0dd1603012194ef84f270c85954fba"
+    "sha256": "73d0f9e9e9bcd17793adfa00b3e1391caaf5c7706d8d077a2168dd0946e1b475"
   },
   {
     "path": "artifacts/live-office/state-failed.png",
@@ -85,6 +85,6 @@
   },
   {
     "path": "artifacts/live-office/tool-and-question.png",
-    "sha256": "77af9070445e9c917a1275089299b7dbb808f6245cca6756a762590466eed437"
+    "sha256": "d2a282e7ad2bc25f14e31280dab1dad62c57cac7a8ebaa404350815865e4e147"
   }
 ]

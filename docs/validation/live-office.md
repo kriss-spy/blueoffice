@@ -39,4 +39,4 @@ The model replied **“BlueOffice live scene verified.”** The room, chat and A
 
 ## Regression checks
 
-The full TypeScript suite, all 19 Python protocol/ownership/settings tests and the production build pass. Focused tests cover all state dimensions, terminal-turn cue identity, replay/attention suppression, independent rig ownership/disposal, clip fallback and persistent desk assignment including legacy migration. Independent review results are recorded separately once complete.
+All 57 TypeScript tests, all 19 Python protocol/ownership/settings tests and the production build pass. Focused tests cover all state dimensions, terminal-turn cue identity, replay/attention suppression, independent rig ownership/disposal, clip fallback and persistent desk assignment including legacy migration. [Independent Standards and Spec reviews](live-office-review.md) are clear after permanently canceling interrupted active cues.
