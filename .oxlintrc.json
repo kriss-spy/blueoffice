@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off"
+  },
+  "rules": {
+    "no-debugger": "error",
+    "no-dupe-else-if": "error",
+    "no-duplicate-case": "error",
+    "no-unreachable": "error",
+    "no-unsafe-finally": "error",
+    "no-async-promise-executor": "error",
+    "constructor-super": "error",
+    "valid-typeof": "error"
+  }
+}
