@@ -5,6 +5,7 @@ import type {
   HistoryDetail,
   HistoryList,
   HistoryQuery,
+  HistorySession,
 } from "../shared/history";
 import "./history.css";
 
@@ -25,10 +26,12 @@ const value = (number: number | null) =>
 export function Activity({
   agents,
   connected,
+  onResume,
 }: {
   agents: OfficeAgent[];
   revision: number;
   connected: boolean;
+  onResume?: (session: HistorySession) => Promise<void>;
 }) {
   const [query, setQuery] = useState<HistoryQuery>({ category: "all" });
   const [list, setList] = useState<HistoryList | null>(null);
@@ -39,6 +42,7 @@ export function Activity({
   const detailLoadKey = useRef("");
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [knownSources, setKnownSources] = useState<string[]>([]);
   const historyKey = JSON.stringify(
     agents.map((agent) => ({
@@ -380,7 +384,37 @@ export function Activity({
                 <button disabled>Prompt</button>
                 <button disabled>Interrupt</button>
                 <button disabled>Stop</button>
-                <button disabled title={detail.session.capability.resumeReason}>
+                <button
+                  disabled={
+                    !connected ||
+                    resuming ||
+                    !onResume ||
+                    !detail.session.capability.resume ||
+                    !agents.some(
+                      (a) =>
+                        a.id === detail.session.agentId &&
+                        a.freshness === "current" &&
+                        ["ready", "stopped"].includes(a.lifecycle) &&
+                        !a.busy &&
+                        !attention(a).length,
+                    )
+                  }
+                  title={detail.session.capability.resumeReason}
+                  onClick={() => {
+                    if (!onResume) return;
+                    setResuming(true);
+                    setDetailError("");
+                    void onResume(detail.session)
+                      .catch((error) =>
+                        setDetailError(
+                          error instanceof Error
+                            ? error.message
+                            : "Resume failed.",
+                        ),
+                      )
+                      .finally(() => setResuming(false));
+                  }}
+                >
                   Resume
                 </button>
               </div>

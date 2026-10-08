@@ -125,6 +125,7 @@ export function routingConfig(model: ModelId) {
     },
     delegation: { ...pin, api_mode: route.apiMode, fallback_providers: [] },
     agent: { api_max_retries: 1, auto_recovery_cycles: 0 },
+    desktop: { auto_continue: { enabled: false } },
     fallback_providers: [],
   };
 }

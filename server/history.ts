@@ -51,6 +51,29 @@ const historicalState = (row: HistoryRecord) => {
 /** Read-only index. Every lookup is re-scoped to trusted discovered profiles. */
 export class HistoryService {
   constructor(private access: HistoryAccess) {}
+  async ownedResumeTarget(id: string, agentId: string) {
+    const index = await this.index();
+    const session = index.sessions.get(id);
+    const profile = index.profiles.find((p) => p.id === session?.profileId);
+    if (!session || !profile)
+      throw new HistoryError(
+        "This history is unavailable. Refresh before resuming.",
+      );
+    if (session.ownership !== "owned" || session.agentId !== agentId)
+      throw new HistoryError(
+        "External history cannot yet be resumed into an owned assistant. Observation does not establish ownership.",
+      );
+    if (!session.persisted)
+      throw new HistoryError(
+        "This conversation has not been persisted by Hermes and cannot yet be resumed.",
+      );
+    return {
+      kind: "resume" as const,
+      historyId: id,
+      storedSessionId: session.storedSessionId,
+      profileId: profile.id,
+    };
+  }
   private async index() {
     const agents = this.access.agents();
     const profiles = await this.access.profiles();
@@ -182,7 +205,15 @@ export class HistoryService {
         (live && (owner!.work === "failed" || !!owner!.error)),
       live,
       persisted,
-      capability,
+      capability: {
+        ...capability,
+        resume: !!owner && persisted,
+        resumeReason: owner
+          ? persisted
+            ? "Resume requires an idle owned assistant and a verified stored route."
+            : "This conversation has not been persisted by Hermes and cannot yet be resumed."
+          : "External history cannot yet be resumed into an owned assistant. Observation does not establish ownership.",
+      },
     };
   }
   async list(query: HistoryQuery = {}): Promise<HistoryList> {

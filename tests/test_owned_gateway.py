@@ -22,11 +22,24 @@ class OwnershipTests(unittest.TestCase):
             source.mkdir(parents=True)
             (source / "__init__.py").write_text("")
             (source / "entry.py").write_text('import time\nprint("READY", flush=True)\ntime.sleep(60)\n')
+            # Pure stand-ins exercise the production wrapper's prelaunch policy
+            # gate as well as the kernel lease, without installed dependencies.
+            (source.parent / "hermes_bootstrap.py").write_text("")
+            native_config = source.parent / "hermes_cli"
+            native_config.mkdir()
+            (native_config / "__init__.py").write_text("")
+            (native_config / "config.py").write_text('import json,os\nfrom pathlib import Path\ndef load_config(): return json.loads((Path(os.environ["HERMES_HOME"])/"config.yaml").read_text())\n')
+            (native_config / "runtime_provider.py").write_text('import os\ndef resolve_runtime_provider(**kwargs): return {"base_url":"http://127.0.0.1:8317/v1","api_mode":"chat_completions","api_key":os.environ["BLUEOFFICE_PROXY_KEY"]}\n')
+            native_agent = source.parent / "agent"
+            native_agent.mkdir()
+            (native_agent / "__init__.py").write_text("")
+            (native_agent / "auxiliary_client.py").write_text('def _resolve_task_provider_model(task): raise AssertionError("no auxiliary call expected")\n')
             profile = root / "profile"
             profile.mkdir()
             (profile / ".blueoffice-agent.json").write_text(json.dumps({"agentId": "test-agent"}))
+            (profile / "config.yaml").write_text(json.dumps({"model":{"default":"glm-5.3-flash","provider":"custom:blueoffice-glm"},"providers":{"blueoffice-glm":{"base_url":"http://127.0.0.1:8317/v1","key_env":"BLUEOFFICE_PROXY_KEY","transport":"chat_completions"}},"agent":{"api_max_retries":1,"auto_recovery_cycles":0},"auxiliary":{"transient_retries":0},"delegation":{"provider":"custom:blueoffice-glm","model":"glm-5.3-flash","api_mode":"chat_completions"},"desktop":{"auto_continue":{"enabled":False}}}))
             args = [sys.executable, "-I", str(ROOT / "scripts/owned_gateway.py"), str(source.parent), str(profile), "test-epoch", "test-agent"]
-            parent = subprocess.Popen([sys.executable, "-c", "import subprocess,sys,time; subprocess.Popen(sys.argv[1:]); time.sleep(60)", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            parent = subprocess.Popen([sys.executable, "-c", "import subprocess,sys,time; subprocess.Popen(sys.argv[1:]); time.sleep(60)", *args], env=dict(os.environ, BLUEOFFICE_MODEL="glm-5.3-flash", BLUEOFFICE_PROXY_KEY="synthetic"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
                 self.assertTrue(select.select([parent.stdout], [], [], 5)[0], "child did not start")
                 self.assertEqual(parent.stdout.readline().strip(), "READY")

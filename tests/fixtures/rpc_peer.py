@@ -32,6 +32,8 @@ if scenario == "abnormal-stop":
 if scenario == "never-ready":
     time.sleep(60)
 session = "live-fixture-" + uuid.uuid4().hex[:8]
+stored_session = "stored-" + session
+session_title = "Owned conversation"
 seq = 0
 busy = False
 requests = {}
@@ -71,11 +73,21 @@ def event(kind, payload=None):
             print(wire, flush=True)
 
 
+def persist_history():
+    path = profile / ".history-fixture.json"
+    data = json.loads(path.read_text())
+    if not any(row["storedSessionId"] == stored_session for row in data["records"]):
+        data["records"].append({"storedSessionId": stored_session, "title": session_title, "source": "blueoffice", "startedAt": "2026-10-08T00:00:00Z", "lastActivityAt": "2026-10-08T00:00:00Z", "endedAt": None, "endReason": None, "parentStoredSessionId": None, "metrics": {"inputTokens": None, "outputTokens": None, "calls": None, "costUsd": None, "costKind": None}})
+    data.setdefault("messages", {})[stored_session] = [{"id": str(i), "role": row["role"], "text": row["text"], "at": None} for i, row in enumerate(history)]
+    path.write_text(json.dumps(data))
+
+
 def finish(generation):
     global busy
     if generation != cancel_generation:
         return
     history.append({"role": "assistant", "text": "Fixture task complete. Your workspace is ready."})
+    persist_history()
     event("message.delta", {"text": "Fixture task complete. "})
     event("message.complete", {"text": "Fixture task complete. Your workspace is ready.", "status": "complete"})
     time.sleep(0.02)  # Deliberately retain busy after completion, as installed Hermes does.
@@ -229,6 +241,13 @@ for line in sys.stdin:
     result = {}
     if method == "session.create":
         result = {"session_id": session, "stored_session_id": "stored-" + session}
+        session_title = params.get("title", "Owned conversation")
+    elif method == "session.resume":
+        if scenario == "resume-failure":
+            write({"id": rid, "error": {"code": 4007, "message": "synthetic resume failure"}})
+            continue
+        stored_session = params["session_id"]
+        result = {"session_id": session, "resumed": params["session_id"], "session_key": params["session_id"], "messages": []}
     elif method == "session.activate":
         result = {"session_id": session, "running": busy, "open_requests": list(requests.values()), "messages": history, "messages_omitted": False, "inflight": inflight}
         time.sleep(0.05)  # Response can arrive after a newer settled session.info.
@@ -258,6 +277,7 @@ for line in sys.stdin:
         else:
             busy = True
             history.append({"role": "user", "text": params["text"]})
+            persist_history()
             cancel_generation += 1
             result = {"status": "streaming"}
             if scenario == "lost-ack":

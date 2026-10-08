@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from profile_settings import validate_approval_policy
+from profile_settings import validate_approval_policy, validate_resume_policy
 sys.path.insert(0, sys.argv[1])
 from hermes_cli.config import load_config
 from hermes_cli.runtime_provider import resolve_runtime_provider
@@ -15,6 +15,7 @@ mode = "codex_responses" if model == "muse-spark-1.3-contributor" else "chat_com
 provider = "custom:blueoffice-muse" if mode == "codex_responses" else "custom:blueoffice-glm"
 endpoint = "http://127.0.0.1:8317/v1"
 config = load_config()
+validate_resume_policy(config)
 validate_approval_policy(Path(os.environ["HERMES_HOME"]), config)
 main = config.get("model", {})
 assert main.get("default") == model and main.get("provider") == provider

@@ -4,6 +4,7 @@ The open flock stays held for the entire Hermes process, including after a Node
 crash. It is never broken based on an untrusted PID file. Hermes runs in-process.
 """
 import ctypes
+import contextlib
 import fcntl
 import json
 import os
@@ -35,4 +36,20 @@ os.fsync(lease_fd)
 os.environ["HERMES_HOME"] = str(profile_path)
 sys.argv = ["tui_gateway.entry"]
 sys.path.insert(0, source)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hermes_bootstrap
+from hermes_cli.config import load_config
+from profile_settings import validate_resume_policy
+validate_resume_policy(load_config())
+saved_argv = sys.argv
+sys.argv = ["check_route.py", source, os.environ.pop("BLUEOFFICE_MODEL")]
+with contextlib.redirect_stdout(sys.stderr):
+    runpy.run_path(str(Path(__file__).resolve().parent / "check_route.py"))
+sys.argv = saved_argv
+if os.environ.get("BLUEOFFICE_RESUME_PLAN"):
+    from history_resume import plan
+    expected = json.loads(os.environ.pop("BLUEOFFICE_RESUME_PLAN"))
+    actual = plan(profile_path, expected["requestedStoredSessionId"], os.environ.pop("BLUEOFFICE_RESUME_MODEL"), agent_id, source)
+    if actual != expected:
+        raise SystemExit("Profile or stored resume target changed after preflight; no conversation was resumed")
 runpy.run_module("tui_gateway.entry", run_name="__main__")

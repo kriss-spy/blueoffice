@@ -9,6 +9,8 @@ import { type ModelId, type RouteStatus } from "../shared/routes.js";
 import type { Launch } from "./rpc.js";
 import { profileOperation } from "./profiles.js";
 import { nativeHistory } from "./history-native.js";
+import { nativeResumePlan } from "./history-resume.js";
+import type { ResumePlan } from "../shared/resume.js";
 import type { HistoryProfile, HistoryReadResult } from "../shared/history.js";
 import type {
   ProfileDefaults,
@@ -27,7 +29,8 @@ export interface RuntimeFactory {
     model?: ModelId,
     defaults?: ProfileDefaults,
   ): Promise<{ profileName: string; profileHome: string }>;
-  launch(agent: OfficeAgent): Promise<Launch>;
+  launch(agent: OfficeAgent, resume?: ResumePlan): Promise<Launch>;
+  resumePlan(agent: OfficeAgent, storedSessionId: string): Promise<ResumePlan>;
   profile(request: ProfileRequest): Promise<ProfileSnapshot | SettingsResult>;
   historyProfiles(): Promise<HistoryProfile[]>;
   historyRead(
@@ -64,6 +67,10 @@ export class HermesRuntime implements RuntimeFactory {
     return nativeHistory<HistoryProfile[]>(await this.discover(), {
       action: "profiles",
     });
+  }
+  async resumePlan(agent: OfficeAgent, storedSessionId: string) {
+    this.registry.require(agent.model);
+    return nativeResumePlan(await this.discover(), agent, storedSessionId);
   }
   async historyRead(
     profile: HistoryProfile,
@@ -148,7 +155,7 @@ export class HermesRuntime implements RuntimeFactory {
     });
     return { profileName, profileHome };
   }
-  async launch(agent: OfficeAgent): Promise<Launch> {
+  async launch(agent: OfficeAgent, resume?: ResumePlan): Promise<Launch> {
     this.registry.require(agent.model);
     const installation = await this.discover();
     const canonical = await realpath(agent.profileHome);
@@ -177,6 +184,13 @@ export class HermesRuntime implements RuntimeFactory {
       HERMES_YOLO_MODE: "0",
       BLUEOFFICE_PROXY_KEY: key,
       OPENAI_BASE_URL: "http://127.0.0.1:8317/v1",
+      BLUEOFFICE_MODEL: agent.model,
+      ...(resume
+        ? {
+            BLUEOFFICE_RESUME_PLAN: JSON.stringify(resume),
+            BLUEOFFICE_RESUME_MODEL: agent.model,
+          }
+        : {}),
     };
     try {
       await execute(
@@ -192,7 +206,7 @@ export class HermesRuntime implements RuntimeFactory {
       );
     } catch {
       throw new Error(
-        "The profile's effective model, API family, credential path, retry or approval policy no longer matches its verified BlueOffice route. Restore managed settings and remove conflicting approval environment overrides before starting.",
+        "The profile's effective route or passive-resume policy no longer matches its verified BlueOffice configuration. Stop this assistant, open Settings and save managed settings; remove conflicting environment overrides before starting.",
       );
     }
     return {
