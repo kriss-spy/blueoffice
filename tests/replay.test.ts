@@ -106,3 +106,72 @@ test("native event sequencing holds reordered events and discards duplicates bey
   );
   assert.deepEqual(sequence.accept(event(2)).frames, []);
 });
+
+test("native snapshot fallback restores only public text and keeps unconfirmed submission visible", async (t) => {
+  const { recoverHistory } = await import("../server/recovery.js");
+  const directory = await mkdtemp(join(tmpdir(), "blueoffice-history-"));
+  const store = new OfficeStore(join(directory, "office.db"));
+  t.after(() => store.close());
+  const office = new Office(store, new FixtureRuntime(directory));
+  const agent = await office.create("Hina", directory);
+  agent.epoch = "epoch";
+  agent.turnId = "turn";
+  agent.messages = [
+    {
+      id: "user",
+      epoch: "epoch",
+      turnId: "turn",
+      role: "user",
+      text: "question",
+      state: "unknown",
+      at: "now",
+      chunkIds: [],
+    },
+    {
+      id: "answer",
+      epoch: "epoch",
+      turnId: "turn",
+      role: "assistant",
+      text: "Part",
+      state: "streaming",
+      at: "now",
+      chunkIds: ["1"],
+    },
+    {
+      id: "tool",
+      epoch: "epoch",
+      turnId: "turn",
+      role: "tool",
+      text: "terminal returned",
+      state: "complete",
+      at: "now",
+      chunkIds: ["2"],
+      toolName: "terminal",
+    },
+  ];
+  recoverHistory(agent, {
+    messages: [
+      { role: "user", text: "question", reasoning: "PRIVATE" },
+      { role: "system", text: "PRIVATE" },
+      { role: "tool", args: "PRIVATE", content: "PRIVATE" },
+    ],
+    inflight: {
+      user: "question",
+      assistant: "Partial recovery",
+      display_metadata: { secret: "PRIVATE" },
+    },
+    running: true,
+  });
+  assert.equal(agent.messages.filter((m) => m.role === "user").length, 1);
+  assert.equal(
+    agent.messages.find((m) => m.id === "answer")!.text,
+    "Partial recovery",
+  );
+  assert.equal(agent.messages.find((m) => m.id === "answer")!.state, "unknown");
+  assert.equal(agent.messages.find((m) => m.id === "tool")!.state, "complete");
+  assert.doesNotMatch(JSON.stringify(agent), /PRIVATE/);
+  assert.throws(
+    () => recoverHistory(agent, { messages: [], messages_omitted: true }),
+    /public history/,
+  );
+});

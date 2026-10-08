@@ -72,7 +72,12 @@ export function recoverHistory(
       !used.has(message.id) &&
       (message.turnId === agent.turnId || message.role === "tool")
     )
-      recovered.push({ ...message, state: "unknown" });
+      recovered.push({
+        ...message,
+        state: ["pending", "streaming"].includes(message.state)
+          ? "unknown"
+          : message.state,
+      });
   agent.messages = [
     ...agent.messages.filter((m) => m.epoch !== agent.epoch),
     ...recovered,

@@ -66,6 +66,7 @@ export function connectOffice(
             : applyEventBatch(current, JSON.parse(event.data) as EventBatch);
           onSnapshot(current);
           onConnection(true);
+          onError("");
         } catch {
           reconnect();
         }
@@ -87,6 +88,7 @@ export function connectOffice(
   };
   const online = () => void connect();
   window.addEventListener("online", online);
+  window.addEventListener("offline", reconnect);
   void connect();
   return () => {
     stopped = true;
@@ -95,5 +97,6 @@ export function connectOffice(
     clearTimeout(timer);
     stream?.close();
     window.removeEventListener("online", online);
+    window.removeEventListener("offline", reconnect);
   };
 }
