@@ -1,0 +1,187 @@
+{
+  "claims": [
+    {
+      "id": "C01",
+      "claim": "Room/edge toolbar composition",
+      "status": "observed",
+      "source_ids": [
+        "E01",
+        "E03"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C02",
+      "claim": "Orthographic camera as practical reconstruction",
+      "status": "inferred",
+      "source_ids": [
+        "E01",
+        "E03"
+      ],
+      "method": "Reasoned from documented states; original implementation not known",
+      "confidence": "low"
+    },
+    {
+      "id": "C03",
+      "claim": "Chibi silhouettes and independent halos",
+      "status": "observed",
+      "source_ids": [
+        "E03",
+        "E10"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C04",
+      "claim": "Pale panels, navy/cyan/yellow semantic hierarchy",
+      "status": "observed",
+      "source_ids": [
+        "E02",
+        "E04",
+        "E05",
+        "E07"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C05",
+      "claim": "Exact font identity",
+      "status": "unknown",
+      "source_ids": [],
+      "method": "Unknown font",
+      "confidence": "low"
+    },
+    {
+      "id": "C06",
+      "claim": "Inventory and edit controls",
+      "status": "observed",
+      "source_ids": [
+        "E02",
+        "E07"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C07",
+      "claim": "Info/confirmation panel hierarchy",
+      "status": "observed",
+      "source_ids": [
+        "E04",
+        "E05",
+        "E08"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C08",
+      "claim": "Formation stage hierarchy",
+      "status": "observed",
+      "source_ids": [
+        "E09",
+        "E10"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C09",
+      "claim": "Combat impacts and attack areas; student detail HUD",
+      "status": "observed",
+      "source_ids": [
+        "E11",
+        "E12"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C10",
+      "claim": "August 2026 lobby/starting-skill changes",
+      "status": "observed",
+      "source_ids": [
+        "S04",
+        "E09"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C11",
+      "claim": "Character/furniture and gift reaction semantics",
+      "status": "observed",
+      "source_ids": [
+        "S01",
+        "E03",
+        "E07"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C12",
+      "claim": "Café production and relationship loop",
+      "status": "observed",
+      "source_ids": [
+        "S01"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C13",
+      "claim": "Formation roles and starting-skill limits",
+      "status": "observed",
+      "source_ids": [
+        "S02",
+        "S04",
+        "E10"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C14",
+      "claim": "Autonomous movement and manual/AUTO combat decisions",
+      "status": "observed",
+      "source_ids": [
+        "S03"
+      ],
+      "method": "Visual/document inspection",
+      "confidence": "high"
+    },
+    {
+      "id": "C15",
+      "claim": "Prepare, fight, evaluate, retry game loop",
+      "status": "inferred",
+      "source_ids": [
+        "S02",
+        "S03"
+      ],
+      "method": "Reasoned from documented states; original implementation not known",
+      "confidence": "low"
+    },
+    {
+      "id": "C16",
+      "claim": "Available Yuuka animation names",
+      "status": "measured",
+      "source_ids": [
+        "S06"
+      ],
+      "method": "JSON arrays and GLB header inspected; counts in yuuka-metadata.json",
+      "confidence": "high"
+    },
+    {
+      "id": "C17",
+      "claim": "Specimen economy, combat and motion numbers",
+      "status": "proposed",
+      "source_ids": [],
+      "method": "Implementation proposal",
+      "confidence": "low"
+    }
+  ]
+}

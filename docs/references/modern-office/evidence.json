@@ -1,0 +1,56 @@
+{
+  "capture_date": "2026-10-08",
+  "delivery_level": "reference_capture",
+  "source_product": "Blue Archive cafe",
+  "edition_build": null,
+  "original_showcase_author": null,
+  "sources": [
+    {"id": "U01", "type": "user_requirement", "claim": "Modern open office with desks, computers, actual cafe bar, and default 2.5D camera."},
+    {"id": "U02", "type": "user_interpretation", "claim": "Previous study reference suits an independent main secretary office."},
+    {"id": "U03", "type": "user_requirement", "claim": "Classroom world deferred until office mode is good enough."},
+    {
+      "id": "V01",
+      "type": "user_supplied_recording",
+      "original_filename": "Screenrecorder-2026-07-30-01-36-37-152.mp4",
+      "original_path": "/home/krisspy/Downloads/Screenrecorder-2026-07-30-01-36-37-152.mp4",
+      "origin_context": "User identifies this as a reference from Discord cafe-showcase.",
+      "sha256": "8424492bf9fb2bdf0b8f1b70e73581a97b7e966b563e274c4e415a7e41e75c76",
+      "video_bundled": false,
+      "width_px": 1068,
+      "height_px": 480,
+      "duration_seconds": 8.248504,
+      "nominal_frame_rate": "30000/1001",
+      "codec": "h264",
+      "audio_codec": "aac",
+      "audio_analyzed": false,
+      "metadata_method": "ffprobe",
+      "playback_rate": null,
+      "dropped_frames": null,
+      "extraction_method": "ffmpeg input seek and one decoded PNG per sample; no crop/recolor/resize",
+      "frames": [
+        {"file": "video-00.5s.png", "requested_time_seconds": 0.5},
+        {"file": "video-03.5s.png", "requested_time_seconds": 3.5},
+        {"file": "video-06.5s.png", "requested_time_seconds": 6.5}
+      ],
+      "reuse_status": "reference_only"
+    },
+    {
+      "id": "I01",
+      "type": "user_supplied_screenshot",
+      "original_filename": "codex-clipboard-3097afae-9d56-4420-9451-378d0ab8e5cb.png",
+      "file": "classroom-later.png",
+      "width_px": 1797,
+      "height_px": 1033,
+      "acquisition_method": "Copied attachment unchanged",
+      "role": "Deferred classroom world",
+      "reuse_status": "reference_only"
+    }
+  ],
+  "assets_to_source_or_create": [
+    {"id": "workstation", "role": "Modern desk/computer/chair", "status": "not_validated", "replacement_brief": "Coherent stylized assembly with seat/work/approach anchors."},
+    {"id": "cafe_bar", "role": "Counter, coffee equipment, cups/display, stools", "status": "not_validated", "replacement_brief": "Recognizable cafe bar fitting the modern office; no barista runtime required."},
+    {"id": "seated_work_motion", "role": "Per-character computer work pose/clip", "status": "not_validated", "replacement_brief": "Match desk/chair anchors and preserve face/halo visibility."}
+  ],
+  "unknown_parameters": ["Exact camera projection/angles", "World/grid scale", "Furniture/clip identifiers", "Motion timings", "Audio behavior"],
+  "implementation_status": "Reference capture and planning updates only; no new runnable specimen."
+}
