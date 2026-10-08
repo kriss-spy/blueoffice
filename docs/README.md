@@ -16,6 +16,7 @@ Persistent agents own avatars; sessions belong under them. This prevents each co
 
 | Document | Purpose |
 |---|---|
+| [Verification workflow](VERIFICATION.md) | Repeatable commands, isolated browser/integration checks, evidence freshness and completion gates. |
 | [PRD](PRD.md) | Confirmed requirements, scope, status semantics, acceptance and open decisions. |
 | [Experience](EXPERIENCE.md) | Screen wireframe, camera, chat, bubbles/motions, office/activity views and editing. |
 | [Architecture](ARCHITECTURE.md) | Runtime supervision, RPC boundaries, identity/event/storage/configuration/recovery design. |

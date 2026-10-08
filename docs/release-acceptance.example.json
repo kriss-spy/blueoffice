@@ -1,0 +1,29 @@
+{
+  "sourceFingerprint": "copy source.fingerprint from the report for the final code",
+  "criteria": {
+    "product": {
+      "passed": false,
+      "reviewedBy": "",
+      "evidence": "artifacts/release/product.md",
+      "evidenceSha256": ""
+    },
+    "visual": {
+      "passed": false,
+      "reviewedBy": "",
+      "evidence": "artifacts/release/visual.md",
+      "evidenceSha256": ""
+    },
+    "performance": {
+      "passed": false,
+      "reviewedBy": "",
+      "evidence": "artifacts/release/performance.md",
+      "evidenceSha256": ""
+    },
+    "liveRoutes": {
+      "passed": false,
+      "reviewedBy": "",
+      "evidence": "artifacts/release/live-routes.json",
+      "evidenceSha256": ""
+    }
+  }
+}

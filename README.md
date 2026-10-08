@@ -31,6 +31,18 @@ Try “check the workspace”, “ask question”, “ask batch”, “ask appro
 
 ## Verify
 
+The [verification workflow](docs/VERIFICATION.md) defines the required checks, isolated test environments, evidence freshness and release acceptance. Use the standard gates:
+
+```sh
+npm run check
+npm run verify:ui
+npm run verify:integration
+```
+
+`check` and `verify:ui` run without live model calls. Installed-Hermes integration requires Linux bubblewrap and the supported installation. `npm run verify:release` additionally accounts for outstanding release acceptance; passing automated checks alone does not establish a completed beta.
+
+Individual checks and probes remain available for focused work:
+
 ```sh
 npm test
 npm run build
