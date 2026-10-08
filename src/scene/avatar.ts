@@ -39,6 +39,7 @@ export function resolveAvatarClip(
 }
 
 export interface AvatarAsset {
+  seating?: import("../../shared/seating").SeatingProfile;
   anchors?: {
     feet: [number, number, number];
     nameplate: [number, number, number];
