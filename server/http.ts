@@ -1,4 +1,5 @@
 import { CharacterRegistry, AssetError } from "./assets.js";
+import { setupPlacementSchema } from "../shared/setup.js";
 import { assetRefSchema } from "../shared/assets.js";
 import { HistoryService, HistoryError } from "./history.js";
 import { LayoutError } from "./layout.js";
@@ -35,6 +36,7 @@ const createInput = z
       "clarify",
     ]),
     approvalMode: settingsSchema.shape.approvalMode.default("manual"),
+    placement: setupPlacementSchema.optional(),
   })
   .strict();
 const promptInput = z
@@ -308,14 +310,25 @@ export function officeServer(
         }
         if (url.pathname === "/api/agents" && req.method === "POST") {
           const input = createInput.parse(await body(req));
+          if (input.placement?.avatar) {
+            if (!characters)
+              throw new OfficeError("Character catalog unavailable.", 400);
+            characters.assignable(input.placement.avatar);
+          }
           send(
             res,
             201,
-            await office.create(input.name, input.workspace, input.model, {
-              soul: input.soul,
-              toolsets: input.toolsets,
-              approvalMode: input.approvalMode,
-            }),
+            await office.create(
+              input.name,
+              input.workspace,
+              input.model,
+              {
+                soul: input.soul,
+                toolsets: input.toolsets,
+                approvalMode: input.approvalMode,
+              },
+              input.placement,
+            ),
           );
           return;
         }
@@ -335,9 +348,15 @@ export function officeServer(
               expectedRevision: revisionInput,
               values: settingsSchema,
               acknowledgeOwnership: z.literal(true),
+              placement: setupPlacementSchema.optional(),
             })
             .strict()
             .parse(await body(req));
+          if (input.placement?.avatar) {
+            if (!characters)
+              throw new OfficeError("Character catalog unavailable.", 400);
+            characters.assignable(input.placement.avatar);
+          }
           send(
             res,
             200,
@@ -347,6 +366,7 @@ export function officeServer(
               input.expectedRevision,
               input.values,
               input.acknowledgeOwnership,
+              input.placement,
             ),
           );
           return;
