@@ -89,26 +89,30 @@ function Chair() {
         color={palette.frame}
       />
       <Cylinder
-        position={[0, 0.17, 0]}
+        position={[0, 0.13, 0]}
         radius={0.045}
-        height={0.18}
+        height={0.1}
         color={palette.frame}
       />
       <Box
-        position={[0, 0.235, 0]}
-        size={[0.55, 0.09, 0.53]}
+        position={[0, 0.218, 0.09]}
+        size={[0.55, 0.09, 0.2]}
         color={palette.blue}
       />
       <Box
-        position={[0, 0.5, 0.23]}
-        size={[0.55, 0.5, 0.09]}
+        position={[0, 0.585, 0.44]}
+        size={[0.55, 0.33, 0.07]}
         color={palette.blue}
       />
-      <Box
-        position={[0, 0.35, 0.24]}
-        size={[0.08, 0.42, 0.06]}
-        color={palette.frame}
-      />
+      {[-0.23, 0.23].map((x) => (
+        <Box
+          key={x}
+          position={[x, 0.35, 0.31]}
+          size={[0.035, Math.hypot(0.26, 0.26), 0.035]}
+          rotation={[Math.PI / 4, 0, 0]}
+          color={palette.frame}
+        />
+      ))}
     </group>
   );
 }
