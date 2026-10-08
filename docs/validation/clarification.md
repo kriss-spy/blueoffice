@@ -17,3 +17,5 @@ Verification:
 - Visible Chromium: keyboard selection/confirmation, two-tab conflict, reload with confirmed lock, multi-select tail, free-text Other, same-turn continuation, cancellation/expiry, unknown attention after disconnect, mobile width 390 without overflow and no page errors.
 
 Commands: `npm test`, `npm run test:protocol`, `npm run build`, and `python3 scripts/hermes_probe.py --suite office --output artifacts/clarification`.
+
+Final validation: 32 TypeScript tests, 19 Python tests, production build and the installed Hermes suite pass. [Independent Standards and Spec reviews](clarification-review.md) have no remaining findings.
