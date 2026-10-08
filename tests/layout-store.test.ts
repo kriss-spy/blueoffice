@@ -159,3 +159,32 @@ test("corrupt latest revision recovers previous valid assignments and keeps requ
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("first layout repairs missing or duplicate legacy desk references transactionally", () => {
+  const { root, store } = setup();
+  try {
+    const first = agent();
+    const missing = { ...agent(), id: "agent-2", deskId: "missing" };
+    const duplicate = { ...agent(), id: "agent-3" };
+    store.save(first, "created", "one");
+    store.save(missing, "created", "two");
+    store.save(duplicate, "created", "three");
+    assert.equal(store.hasSavedLayout(), false);
+    const restored = new LayoutService(store).snapshot();
+    assert.equal(store.hasSavedLayout(), true);
+    assert.deepEqual(restored.assignments, {
+      "agent-1": "desk-1",
+      "agent-2": null,
+      "agent-3": null,
+    });
+    assert.equal(restored.recoveredFrom, 0);
+    assert.deepEqual(
+      store.agents().map((a) => a.deskId),
+      ["desk-1", null, null],
+    );
+    assert.deepEqual(store.agents()[1].requests, missing.requests);
+    store.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -22,6 +22,7 @@ import {
 } from "./ScenePrimitives";
 import {
   initialLayout,
+  layoutInventory,
   completeWorkstation,
   safeStandingPosition,
   type LayoutDraft,
@@ -469,12 +470,14 @@ export function OfficeScene({
           {savedLayout.recoveredFrom
             ? `valid revision ${savedLayout.recoveredFrom}`
             : "the default room"}{" "}
-          because the latest saved revision was corrupt.
+          to recover a valid room and safe assignment references.
         </p>
       )}
       <details className="layout-inventory">
         <summary>
-          Furniture inventory · {visibleLayout.placements.length} workstations
+          Furniture inventory · {visibleLayout.placements.length} workstations ·{" "}
+          {layoutInventory(visibleLayout).componentCount} components + 6 room
+          furniture
         </summary>
         <ul>
           {visibleLayout.placements.map((p) => (

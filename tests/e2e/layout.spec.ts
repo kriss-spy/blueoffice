@@ -159,3 +159,55 @@ test("stale revision cannot replace a newer saved room", async ({
     false,
   );
 });
+
+test("corrupt latest saved layout visibly restores the previous valid room without resolving pending input", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  await send(page, "Hina", "single question");
+  await expect(
+    page.getByRole("region", { name: "Question request" }),
+  ).toBeVisible();
+  const before = (await snapshot(page)).agents[0];
+  const previous = await layout(page);
+  const beforeFrames = await frames(before);
+  await page.getByRole("button", { name: "Edit office", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Workstation editor" });
+  await editor
+    .getByLabel("Selected workstation", { exact: true })
+    .selectOption("desk-1");
+  await editor
+    .getByRole("button", { name: "Delete workstation", exact: true })
+    .click();
+  await editor
+    .getByRole("button", { name: "Save layout", exact: true })
+    .click();
+  await expect(editor).not.toBeVisible();
+  const latest = await layout(page);
+  expect(latest.assignments[before.id]).toBeNull();
+  const { DatabaseSync } = await import("node:sqlite");
+  const { join } = await import("node:path");
+  const db = new DatabaseSync(join(office.data, "office.db"));
+  try {
+    db.prepare("UPDATE layout_revisions SET body=? WHERE revision=?").run(
+      "{corrupt",
+      latest.revision,
+    );
+  } finally {
+    db.close();
+  }
+  await page.reload();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Layout restored" }),
+  ).toBeVisible();
+  const recovered = await layout(page);
+  expect(recovered.recoveredFrom).toBe(previous.revision);
+  expect(recovered.placements).toEqual(previous.placements);
+  expect(recovered.assignments[before.id]).toBe("desk-1");
+  const after = (await snapshot(page)).agents[0];
+  expect(after.requests).toEqual(before.requests);
+  expect(after.epoch).toBe(before.epoch);
+  expect(await frames(after)).toEqual(beforeFrames);
+});

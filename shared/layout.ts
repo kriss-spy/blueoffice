@@ -273,3 +273,34 @@ export function detachComponent(
 export function safeStandingPosition(index: number): Point {
   return [0.5 + (index % 4) * 0.8, 0, -3.35 + Math.floor(index / 4) * 0.65];
 }
+
+/** Catalog and counts describe functional furniture, excluding decorative cups and keys. */
+export const layoutCatalog = [
+  {
+    kind: "workstation",
+    label: "Workstation assembly",
+    components: [...layoutComponents],
+    width: workstation.footprint.width,
+    depth: workstation.footprint.depth,
+  },
+] as const;
+export function layoutInventory(draft: LayoutDraft) {
+  const components = Object.fromEntries(
+    layoutComponents.map((component) => [
+      component,
+      draft.placements.filter((p) => p.components[component]).length,
+    ]),
+  ) as Record<LayoutComponent, number>;
+  const componentCount = Object.values(components).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  const roomFurniture = { cafeCounters: 1, barStools: 3, floorPlants: 2 };
+  return {
+    assemblies: draft.placements.length,
+    components,
+    componentCount,
+    roomFurniture,
+    furnitureCount: componentCount + 6,
+  };
+}

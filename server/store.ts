@@ -53,6 +53,9 @@ export class OfficeStore {
     if (!columns.some((c) => c.name === "body"))
       this.db.exec("ALTER TABLE events ADD COLUMN body TEXT");
   }
+  hasSavedLayout(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM layout_revisions LIMIT 1").get();
+  }
   /** Read and recover the full layout/assignment transaction, retaining a monotonic revision. */
   layoutSnapshot(): LayoutSnapshot {
     const rows = this.db
@@ -61,16 +64,27 @@ export class OfficeStore {
       )
       .all();
     if (!rows.length) {
-      const draft = initialLayout(this.agents());
-      const snapshot: LayoutSnapshot = {
-        ...draft,
-        schemaVersion: 1,
-        revision: 1,
-      };
-      this.db
-        .prepare("INSERT INTO layout_revisions VALUES (?,?)")
-        .run(snapshot.revision, JSON.stringify(snapshot));
-      return snapshot;
+      const agents = this.agents();
+      const draft = initialLayout(agents);
+      const ids = new Set(draft.placements.map((p) => p.id));
+      const occupied = new Set<string>();
+      let repaired = false;
+      for (const agent of agents) {
+        if (
+          agent.deskId &&
+          (!ids.has(agent.deskId) || occupied.has(agent.deskId))
+        ) {
+          draft.assignments[agent.id] = null;
+          repaired = true;
+        } else if (agent.deskId) occupied.add(agent.deskId);
+      }
+      const issues = validateLayout(draft);
+      if (issues.length)
+        throw new LayoutError(
+          issues.map((issue) => issue.message).join(" "),
+          422,
+        );
+      return this.writeLayout(draft, 1, repaired ? 0 : undefined);
     }
     for (const row of rows) {
       let candidate: unknown;
