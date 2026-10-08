@@ -143,3 +143,17 @@ test("duplicate avatars share geometry and materials but own skeletons and mixer
   assert.notEqual(b.skeleton.boneTexture, null);
   disposeAvatarInstance(second);
 });
+
+test("missing semantic mappings never select unreviewed native clips", () => {
+  const idle = new AnimationClip("Idle", 1, []);
+  const unreviewed = ["react", "walk", "seated", "Absent_Clip"].map(
+    (name) => new AnimationClip(name, 1, []),
+  );
+  for (const motion of ["react", "walk", "seated", "missing"] as const) {
+    const result = resolveAvatarClip([idle, ...unreviewed], motion, {
+      idle: "Idle",
+    });
+    assert.equal(result.clip, idle);
+    assert.match(result.diagnostic, /mapping unavailable/);
+  }
+});

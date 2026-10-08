@@ -23,9 +23,8 @@ export function resolveAvatarClip(
   motion: AvatarMotion,
   mapping: Partial<Record<AvatarMotion, string>> = proofAvatar.clips,
 ) {
-  const name =
-    motion === "missing" ? "Absent_Clip" : (mapping[motion] ?? motion);
-  const requested = clips.find((clip) => clip.name === name);
+  const name = motion === "missing" ? undefined : mapping[motion];
+  const requested = name ? clips.find((clip) => clip.name === name) : undefined;
   const clip = requested ?? clips.find((clip) => clip.name === mapping.idle);
   if (!clip)
     throw new Error(
@@ -33,7 +32,9 @@ export function resolveAvatarClip(
     );
   return {
     clip,
-    diagnostic: requested ? "" : `${name} unavailable · showing standing idle`,
+    diagnostic: requested
+      ? ""
+      : `${name ?? `${motion} mapping`} unavailable · showing standing idle`,
   };
 }
 
