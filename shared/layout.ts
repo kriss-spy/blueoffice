@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assetRefSchema } from "./assets.js";
 import {
   workstation,
   worldAnchor,
@@ -50,6 +51,26 @@ export const layoutSnapshotSchema = layoutDraftSchema
     schemaVersion: z.literal(1),
     revision: z.number().int().nonnegative(),
     recoveredFrom: z.number().int().nonnegative().optional(),
+    avatars: z.record(z.string(), assetRefSchema.nullable()).optional(),
+    references: z
+      .array(
+        z
+          .object({
+            agentId: z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/),
+            deskId: z
+              .string()
+              .regex(/^[a-zA-Z0-9_-]{1,80}$/)
+              .nullable(),
+            avatar: assetRefSchema.nullable(),
+            boundAgentId: z
+              .string()
+              .regex(/^[a-zA-Z0-9_-]{1,200}$/)
+              .nullable(),
+          })
+          .strict(),
+      )
+      .max(64)
+      .optional(),
   })
   .strict();
 export type LayoutPlacement = z.infer<typeof placementSchema>;

@@ -1,0 +1,53 @@
+.layout-transfer {
+  margin: 10px 0;
+  font-size: 13px;
+}
+.transfer-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.transfer-dialog {
+  position: fixed;
+  inset: 8vh 12vw;
+  overflow-y: auto;
+  z-index: 70;
+  background: #f8fbfc;
+  border: 1px solid #b9cbd4;
+  box-shadow: 0 14px 60px #34475755;
+  border-radius: 12px;
+  padding: 24px;
+}
+.transfer-dialog h3 {
+  margin-top: 0;
+}
+.transfer-dialog label {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0;
+}
+.transfer-dialog textarea {
+  width: 100%;
+  padding: 10px;
+  font-family: monospace;
+}
+.transfer-dialog select {
+  padding: 6px;
+}
+.transfer-dialog fieldset {
+  margin: 12px 0;
+  border: 1px solid #b9cbd4;
+}
+.transfer-dialog [role="alert"] {
+  color: #923727;
+}
+.transfer-dialog li {
+  margin: 5px 0;
+}
+@media (max-width: 700px) {
+  .transfer-dialog {
+    inset: 3vh 3vw;
+    padding: 16px;
+  }
+}
