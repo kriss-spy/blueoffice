@@ -252,7 +252,7 @@ export function officeServer(office: Office, assets = resolve("dist")) {
           return;
         }
         const route =
-          /^\/api\/agents\/([a-f0-9-]{36})\/(start|stop|prompt|interrupt|reply)$/.exec(
+          /^\/api\/agents\/([a-f0-9-]{36})\/(start|stop|prompt|interrupt|reply|answer-question)$/.exec(
             url.pathname,
           );
         if (route && req.method === "POST") {
@@ -273,6 +273,25 @@ export function officeServer(office: Office, assets = resolve("dist")) {
           } else if (action === "interrupt") {
             const data = z.object({ target }).strict().parse(input);
             result = await office.interrupt(id, data.target);
+          } else if (action === "answer-question") {
+            const data = z
+              .object({
+                commandId,
+                target,
+                requestId: z.string().min(1).max(500),
+                questionId: z.string().min(1).max(200),
+                answer: z.string().min(1).max(16000),
+              })
+              .strict()
+              .parse(input);
+            result = await office.lockAnswer(
+              id,
+              data.requestId,
+              data.commandId,
+              data.target,
+              data.questionId,
+              data.answer,
+            );
           } else {
             const data = replyInput.parse(input);
             result = await office.reply(

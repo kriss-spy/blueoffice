@@ -37,7 +37,7 @@ class MockProvider:
                         tool = ("clarify", {"question": "Choose a synthetic desk", "choices": ["Oak", "Birch"]})
                     elif "PROBE_BATCH" in user:
                         tool = ("clarify", {"questions": [{"question": "Desk?", "choices": ["Oak", "Birch"]},
-                                                           {"question": "Lamp?", "choices": ["Blue", "White"]}]})
+                                                           {"question": "Lamp?", "choices": ["Blue", "White"], "multi_select": "MULTI" in user}]})
                     elif "PROBE_APPROVAL" in user:
                         # The path is in the disposable namespace. The harness always denies.
                         tool = ("terminal", {"command": "rm -rf /tmp/blueoffice-approval-sentinel"})

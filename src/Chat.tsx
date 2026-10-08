@@ -58,12 +58,29 @@ export function Chat({
     request: PendingRequest,
     answer: Record<string, unknown>,
   ) => {
-    await command(`/api/agents/${agent.id}/reply`, {
+    const receipt = (await command(`/api/agents/${agent.id}/reply`, {
       requestId: request.id,
       commandId: crypto.randomUUID(),
       target: { epoch: request.epoch, sessionId: request.sessionId },
       answer,
-    });
+    })) as { state: string; message: string };
+    if (receipt.state === "failed" || receipt.state === "unknown")
+      throw new Error(receipt.message);
+  };
+  const lock = async (
+    request: PendingRequest,
+    questionId: string,
+    answer: string,
+  ) => {
+    const receipt = (await command(`/api/agents/${agent.id}/answer-question`, {
+      requestId: request.id,
+      commandId: crypto.randomUUID(),
+      target: { epoch: request.epoch, sessionId: request.sessionId },
+      questionId,
+      answer,
+    })) as { state: string; message: string };
+    if (receipt.state === "failed" || receipt.state === "unknown")
+      throw new Error(receipt.message);
   };
   return (
     <section
@@ -159,12 +176,13 @@ export function Chat({
               ))}
           </section>
         ))}
-        {pending.map((request) => (
+        {agent.requests.map((request) => (
           <RequestCard
             key={request.id}
             request={request}
             disabled={!ready}
             onReply={reply}
+            onLock={lock}
           />
         ))}
       </div>

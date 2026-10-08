@@ -1,3 +1,8 @@
+import {
+  parseClarification,
+  singleQuestion,
+  validClarificationAnswer,
+} from "../shared/clarification.js";
 import { turnFailure } from "./failures.js";
 import type { ModelId } from "../shared/routes.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -116,8 +121,10 @@ export class Office extends EventEmitter {
         agent.error =
           "The previous supervisor ended without a confirmed stop. Start will first acquire the profile ownership lease; old commands are never resent.";
         for (const request of attention(agent)) {
-          request.state = "lost";
+          request.freshness = "unknown";
           request.reason = "Previous runtime ownership is unknown.";
+          for (const q of request.questions)
+            if (q.state === "pending") q.state = "unknown";
         }
         for (const receipt of agent.receipts)
           if (receipt.state === "pending") {
@@ -447,6 +454,10 @@ export class Office extends EventEmitter {
       throw new OfficeError(
         "This agent already has a runtime or a lifecycle operation in progress.",
       );
+    const previousBinding = {
+      epoch: agent.epoch,
+      liveSessionId: agent.liveSessionId,
+    };
     agent.epoch = randomUUID();
     agent.liveSessionId = null;
     agent.lifecycle = "starting";
@@ -454,10 +465,6 @@ export class Office extends EventEmitter {
     agent.error = null;
     agent.work = "idle";
     agent.busy = false;
-    for (const pending of attention(agent)) {
-      pending.state = "lost";
-      pending.reason = "Runtime was replaced.";
-    }
     this.changed(agent, "runtime.starting");
     let rpc: RpcChild | undefined;
     try {
@@ -474,6 +481,7 @@ export class Office extends EventEmitter {
           return;
         agent.freshness = "unknown";
         agent.work = "unknown";
+        for (const request of attention(agent)) request.freshness = "unknown";
         agent.error =
           "Runtime telemetry was lost. Known requests remain visible; uncertain commands are disabled.";
         this.changed(agent, "runtime.disconnected");
@@ -490,7 +498,7 @@ export class Office extends EventEmitter {
           agent.error =
             "The owned runtime exited unexpectedly. Start a new runtime explicitly; the last task outcome is unknown.";
           for (const request of attention(agent)) {
-            request.state = "lost";
+            request.freshness = "unknown";
             request.reason = "Owned runtime exited.";
           }
           this.changed(agent, "runtime.exited");
@@ -518,12 +526,21 @@ export class Office extends EventEmitter {
       agent.lifecycle = "ready";
       agent.work = "idle";
       agent.freshness = "current";
+      for (const pending of attention(agent)) {
+        if (pending.epoch !== agent.epoch) {
+          pending.state = "lost";
+          pending.reason = "Runtime was replaced.";
+        }
+      }
       this.changed(agent, "runtime.ready");
     } catch (error) {
       agent.lifecycle = "stopping";
       if (rpc) await rpc.stop();
       this.runtimes.delete(id);
       agent.lifecycle = "failed";
+      agent.epoch = previousBinding.epoch;
+      agent.liveSessionId = previousBinding.liveSessionId;
+      for (const request of attention(agent)) request.freshness = "unknown";
       agent.freshness = "unknown";
       agent.busy = false;
       agent.error =
@@ -690,6 +707,96 @@ export class Office extends EventEmitter {
     }
     this.changed(agent, "runtime.stopped");
   }
+  async lockAnswer(
+    id: string,
+    requestId: string,
+    commandId: string,
+    target: Target,
+    questionId: string,
+    answer: string,
+  ) {
+    const agent = this.get(id);
+    const payload = { requestId, target, questionId, answer };
+    if (this.store.command(id, commandId))
+      return structuredClone(
+        this.admit(agent, commandId, "answer-question", payload)!,
+      );
+    const rpc = this.assertCurrent(agent, target);
+    const request = agent.requests.find(
+      (r) =>
+        r.id === requestId &&
+        r.epoch === target.epoch &&
+        r.sessionId === target.sessionId,
+    );
+    if (!request || request.state !== "open")
+      throw new OfficeError("This request is no longer open.");
+    const q = request.questions.find((q) => q.qid === questionId);
+    if (request.kind !== "clarify" || typeof request.frameId !== "string" || !q)
+      throw new OfficeError(
+        "This request does not support that question lock.",
+        400,
+      );
+    if (
+      q.state === "locked" ||
+      request.questions.some(
+        (q) => q.state === "pending" || q.state === "unknown",
+      )
+    )
+      throw new OfficeError(
+        "This answer is already locked or another answer is awaiting confirmation.",
+      );
+    if (!validClarificationAnswer(q, answer))
+      throw new OfficeError(
+        "Provide a permitted answer for this question.",
+        400,
+      );
+    this.admit(agent, commandId, "answer-question", payload);
+    const receipt = agent.receipts.at(-1)!;
+    q.state = "pending";
+    q.answer = answer;
+    this.changed(agent, "question.pending");
+    try {
+      const result = await rpc.request<{
+        status: string;
+        remaining?: string[];
+      }>("clarify.lock", {
+        request_id: request.frameId,
+        question_id: q.qid,
+        answer,
+      });
+      if (result.status === "expired") {
+        q.state = "open";
+        request.state = "expired";
+        request.reason = "Hermes reports that this request has expired.";
+        receipt.state = "failed";
+        receipt.message = request.reason;
+      } else if (
+        result.status === "ok" &&
+        Array.isArray(result.remaining) &&
+        result.remaining.every((id) =>
+          request.questions.some((q) => q.qid === id),
+        ) &&
+        !result.remaining.includes(q.qid)
+      ) {
+        q.state = "locked";
+        receipt.state = "accepted";
+        receipt.message = "Hermes confirmed this question's answer.";
+        if (!result.remaining.length && request.state === "open") {
+          request.state = "resolved"; // The final lock has an explicit native admission acknowledgement.
+        }
+      } else throw new RpcFailure("Invalid question acknowledgement.", true);
+    } catch (error) {
+      const uncertain = !(error instanceof RpcFailure) || error.uncertain;
+      q.state = uncertain ? "unknown" : "open";
+      receipt.state = uncertain ? "unknown" : "failed";
+      receipt.message = uncertain
+        ? "Question delivery is uncertain. It will not be sent again automatically."
+        : "Hermes rejected this answer. Review the question before trying again.";
+      if (uncertain) request.freshness = "unknown";
+    }
+    this.changed(agent, "question.receipt");
+    return structuredClone(receipt);
+  }
   async reply(
     id: string,
     requestId: string,
@@ -700,7 +807,11 @@ export class Office extends EventEmitter {
     const agent = this.get(id);
     const request = agent.requests.find((r) => r.id === requestId);
     const prior = this.store.command(id, commandId);
-    if (!prior && (!request || request.state !== "open"))
+    if (prior)
+      return structuredClone(
+        this.admit(agent, commandId, "reply", { requestId, target, answer })!,
+      );
+    if (!request || request.state !== "open")
       throw new OfficeError(
         "This request is no longer open or already has a delivered reply.",
       );
@@ -727,29 +838,48 @@ export class Office extends EventEmitter {
         );
     } else if (request.questions.length) {
       const answers = answer.answers;
+      const remaining = request.questions.filter((q) => q.state !== "locked");
+      if (
+        request.questions.some(
+          (q) => q.state === "pending" || q.state === "unknown",
+        )
+      )
+        throw new OfficeError(
+          "A question answer is awaiting confirmation. Do not submit it again.",
+        );
       if (
         Object.keys(answer).length !== 1 ||
         !answers ||
         typeof answers !== "object" ||
-        Array.isArray(answers)
+        Array.isArray(answers) ||
+        Object.keys(answers).length !== remaining.length ||
+        remaining.some((q) => !Object.hasOwn(answers, q.qid))
       )
-        throw new OfficeError("Answer each question in this request.", 400);
+        throw new OfficeError(
+          "The batch answer must contain exactly these unanswered question IDs.",
+          400,
+        );
       if (
-        Object.keys(answers).length !== request.questions.length ||
-        request.questions.some(
+        remaining.some(
           (q) =>
-            typeof (answers as Record<string, unknown>)[q.qid] !== "string",
+            !validClarificationAnswer(
+              q,
+              (answers as Record<string, unknown>)[q.qid],
+            ),
         )
       )
         throw new OfficeError(
-          "The batch answer must contain exactly these question IDs.",
+          "Provide a permitted answer for each unanswered question.",
           400,
         );
     } else if (
       Object.keys(answer).length !== 1 ||
-      typeof answer.answer !== "string"
+      !validClarificationAnswer(singleQuestion(request), answer.answer)
     )
-      throw new OfficeError("Provide a text answer for this question.", 400);
+      throw new OfficeError(
+        "Provide a permitted answer for this question.",
+        400,
+      );
     const duplicate = this.admit(agent, commandId, "reply", {
       requestId,
       target,
@@ -758,6 +888,13 @@ export class Office extends EventEmitter {
     if (duplicate) return structuredClone(duplicate);
     const receipt = agent.receipts.at(-1)!;
     request.state = "delivered";
+    if (request.kind === "clarify") {
+      if (request.questions.length) {
+        const answers = answer.answers as Record<string, string>;
+        for (const q of request.questions)
+          if (q.state !== "locked") q.answer = answers[q.qid];
+      } else request.answer = answer.answer as string;
+    }
     this.changed(agent, "request.delivering");
     try {
       rpc.response(request.frameId, answer);
@@ -779,13 +916,26 @@ export class Office extends EventEmitter {
       agent.requests.filter((r) => r.state === "delivered").map((r) => r.id),
     );
     const replay = await rpc.request<{
-      open_requests: { id: string | number }[];
+      open_requests: Frame[];
+      events?: Record<string, unknown>[];
     }>("session.events.since", { session_id: agent.liveSessionId });
     if (
       this.runtimes.get(agent.id) !== rpc ||
       !Array.isArray(replay.open_requests)
     )
       return;
+    // Native replay contains event payload envelopes, not live JSON-RPC frames.
+    for (const event of Array.isArray(replay.events) ? replay.events : [])
+      if (
+        event &&
+        event.type === "request.cancel" &&
+        event.session_id === agent.liveSessionId
+      )
+        this.frame(agent, rpc, {
+          jsonrpc: "2.0",
+          method: "event",
+          params: event,
+        });
     for (const request of agent.requests)
       if (
         delivered.has(request.id) &&
@@ -821,24 +971,21 @@ export class Office extends EventEmitter {
   private frame(agent: OfficeAgent, rpc: RpcChild, frame: Frame) {
     const params = frame.params ?? {};
     if (params.session_id !== agent.liveSessionId) return;
-    if (frame.id !== undefined && frame.method && frame.method !== "event") {
+    if (
+      (typeof frame.id === "string" ||
+        (typeof frame.id === "number" && Number.isSafeInteger(frame.id))) &&
+      frame.method &&
+      frame.method !== "event"
+    ) {
       const id = `${agent.epoch}:${typeof frame.id}:${frame.id}`;
       if (agent.requests.some((r) => r.id === id)) return;
-      const kind =
-        frame.method === "clarify"
-          ? "clarify"
-          : frame.method === "approval"
-            ? "approval"
-            : "unsupported";
-      const questions =
-        kind === "clarify" && Array.isArray(params.questions)
-          ? params.questions.slice(0, 5).map((q: Record<string, unknown>) => ({
-              qid: text(q.qid, 100),
-              question: text(q.question),
-              choices: strings(q.choices),
-              multiSelect: q.multi_select === true,
-            }))
-          : [];
+      const clarification =
+        frame.method === "clarify" ? parseClarification(params) : undefined;
+      const kind = clarification
+        ? "clarify"
+        : frame.method === "approval"
+          ? "approval"
+          : "unsupported";
       const pending: PendingRequest = {
         id,
         frameId: frame.id,
@@ -848,14 +995,16 @@ export class Office extends EventEmitter {
         innerId: kind === "approval" ? text(params.request_id, 200) : undefined,
         text:
           kind === "unsupported"
-            ? "This task needs private input that BlueOffice does not support yet. Interrupt to end the wait."
+            ? "This request uses an input format BlueOffice does not support yet. Interrupt to end the wait."
             : kind === "approval"
               ? [text(params.description), text(params.command)]
                   .filter(Boolean)
                   .join("\n")
               : text(params.question),
         choices: kind === "unsupported" ? [] : strings(params.choices),
-        questions,
+        questions: [],
+        ...clarification,
+        freshness: "current",
         state: "open",
         at: now(),
       };
@@ -997,6 +1146,7 @@ export class Office extends EventEmitter {
         );
         if (request && ["open", "delivered"].includes(request.state)) {
           request.state = "expired";
+          request.freshness = "current";
           request.reason = text(payload.reason, 100);
         }
         break;

@@ -65,6 +65,57 @@ try {
   checks.push(
     "real Hermes public stream, clarify answer and same-turn completion",
   );
+  await office.prompt(created.id, randomUUID(), target(), "PROBE_BATCH_MULTI");
+  await until(() => attention(current()).length === 1);
+  const batch = attention(current())[0];
+  const batchTurn = current().turnId;
+  assert.equal(batch.questions.length, 2);
+  assert.equal(batch.questions[1].multiSelect, true);
+  await office.lockAnswer(
+    created.id,
+    batch.id,
+    randomUUID(),
+    target(),
+    batch.questions[0].qid,
+    "Birch",
+  );
+  assert.equal(current().requests.at(-1)!.questions[0].state, "locked");
+  assert.equal(store.agents()[0].requests.at(-1)!.questions[0].answer, "Birch");
+  await office.reply(created.id, batch.id, randomUUID(), target(), {
+    answers: { [batch.questions[1].qid]: JSON.stringify(["Blue", "White"]) },
+  });
+  await until(
+    () =>
+      current().work === "completed" &&
+      !current().busy &&
+      !attention(current()).length,
+  );
+  assert.equal(current().turnId, batchTurn);
+  checks.push(
+    "native batch lock acknowledgement, persisted partial progress, multiselect final tail and same-turn continuation",
+  );
+  await office.prompt(created.id, randomUUID(), target(), "PROBE_BATCH");
+  await until(() => attention(current()).length === 1);
+  const allLocked = attention(current())[0];
+  for (const q of allLocked.questions)
+    await office.lockAnswer(
+      created.id,
+      allLocked.id,
+      randomUUID(),
+      target(),
+      q.qid,
+      q.choices[0],
+    );
+  await until(
+    () =>
+      current().work === "completed" &&
+      !current().busy &&
+      !attention(current()).length,
+  );
+  assert.equal(current().requests.at(-1)!.state, "resolved");
+  checks.push(
+    "native final batch lock explicitly resolves the request without a response frame",
+  );
   await office.prompt(created.id, randomUUID(), target(), "PROBE_APPROVAL");
   await until(() => attention(current()).some((r) => r.kind === "approval"));
   const permission = attention(current())[0];

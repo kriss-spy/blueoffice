@@ -1,49 +1,85 @@
 import { useState, type FormEvent } from "react";
-import type { PendingRequest } from "../shared/office";
+import type { PendingRequest, Question } from "../shared/office";
+import {
+  singleQuestion,
+  validClarificationAnswer,
+} from "../shared/clarification";
 
+type Submit = (
+  request: PendingRequest,
+  answer: Record<string, unknown>,
+) => Promise<void>;
 export function RequestCard({
   request,
   disabled,
   onReply,
+  onLock,
 }: {
   request: PendingRequest;
   disabled: boolean;
-  onReply: (
+  onReply: Submit;
+  onLock: (
     request: PendingRequest,
-    answer: Record<string, unknown>,
+    questionId: string,
+    answer: string,
   ) => Promise<void>;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const terminal = !["open", "delivered"].includes(request.state);
   const waiting = request.state === "delivered";
-  const submit = async (answer: Record<string, unknown>) => {
+  const blocked =
+    disabled ||
+    submitting ||
+    waiting ||
+    terminal ||
+    request.freshness === "unknown" ||
+    request.questions.some(
+      (q) => q.state === "pending" || q.state === "unknown",
+    );
+  const submit = async (action: () => Promise<void>) => {
+    if (submitting) return;
     setSubmitting(true);
     setError("");
     try {
-      await onReply(request, answer);
+      await action();
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setSubmitting(false);
     }
   };
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    void submit(
-      request.questions.length ? { answers } : { answer: answers.single ?? "" },
-    );
-  };
   const questions = request.questions.length
     ? request.questions
-    : [
-        {
-          qid: "single",
-          question: request.text,
-          choices: request.choices,
-          multiSelect: false,
-        },
-      ];
+    : [singleQuestion(request)];
+  const answerFor = (q: Question) =>
+    q.state === "locked"
+      ? (q.answer ?? "")
+      : (answers[q.qid] ?? q.answer ?? "");
+  const set = (qid: string, value: string) =>
+    setAnswers((current) => ({ ...current, [qid]: value }));
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (blocked) return;
+    const remaining = questions.filter((q) => q.state !== "locked");
+    if (remaining.some((q) => !validClarificationAnswer(q, answerFor(q)))) {
+      setError("Answer each remaining question before sending.");
+      return;
+    }
+    void submit(() =>
+      onReply(
+        request,
+        request.questions.length
+          ? {
+              answers: Object.fromEntries(
+                remaining.map((q) => [q.qid, answerFor(q)]),
+              ),
+            }
+          : { answer: answerFor(questions[0]) },
+      ),
+    );
+  };
   return (
     <section
       className={`request-card ${request.kind}`}
@@ -58,63 +94,73 @@ export function RequestCard({
         {request.kind === "approval"
           ? "Permission needed"
           : request.kind === "unsupported"
-            ? "Private input needed"
+            ? "Unsupported input"
             : "A question for you"}
       </h3>
       {request.kind !== "clarify" ? (
         <p className="request-text">{request.text}</p>
       ) : null}
+      {terminal ? (
+        <p role="status">
+          {request.state === "resolved"
+            ? "Hermes confirmed this request is closed."
+            : request.reason || "This request is no longer available."}
+        </p>
+      ) : null}
+      {request.freshness === "unknown" && !terminal ? (
+        <p role="status">
+          Request status is unknown. Your known question and answers are
+          retained; sending is disabled.
+        </p>
+      ) : null}
       {waiting ? (
-        <p role="status">Reply delivered. Waiting for confirmation…</p>
+        <p role="status">
+          Reply delivered. Waiting for Hermes to confirm closure…
+        </p>
       ) : null}
       {request.kind === "clarify" ? (
         <form onSubmit={onSubmit}>
           {questions.map((q) => (
-            <fieldset key={q.qid} disabled={disabled || submitting || waiting}>
+            <fieldset key={q.qid} disabled={blocked || q.state === "locked"}>
               <legend>{q.question}</legend>
-              {q.choices.length ? (
-                <div className="choices">
-                  {q.choices.map((choice) => (
-                    <button
-                      key={choice}
-                      type="button"
-                      aria-pressed={answers[q.qid] === choice}
-                      onClick={() =>
-                        setAnswers((current) => ({
-                          ...current,
-                          [q.qid]: choice,
-                        }))
-                      }
-                    >
-                      {choice}
-                    </button>
-                  ))}
-                </div>
+              <AnswerInput
+                question={q}
+                value={answerFor(q)}
+                onChange={(value) => set(q.qid, value)}
+              />
+              {q.state === "locked" ? (
+                <p role="status">Answer confirmed by Hermes.</p>
+              ) : q.state === "pending" ? (
+                <p role="status">Sending this answer…</p>
+              ) : q.state === "unknown" ? (
+                <p role="status">Answer delivery is unknown.</p>
               ) : null}
-              <label className="answer-label">
-                {q.choices.length
-                  ? "Your answer or another choice"
-                  : "Your answer"}
-                <input
-                  required
-                  value={answers[q.qid] ?? ""}
-                  maxLength={16000}
-                  onChange={(e) =>
-                    setAnswers((current) => ({
-                      ...current,
-                      [q.qid]: e.target.value,
-                    }))
+              {request.questions.length > 1 &&
+              typeof request.frameId === "string" &&
+              !terminal ? (
+                <button
+                  type="button"
+                  disabled={
+                    blocked ||
+                    q.state === "locked" ||
+                    !validClarificationAnswer(q, answerFor(q))
                   }
-                />
-              </label>
+                  onClick={() =>
+                    void submit(() => onLock(request, q.qid, answerFor(q)))
+                  }
+                >
+                  {q.state === "locked"
+                    ? "Answer locked"
+                    : "Confirm this answer"}
+                </button>
+              ) : null}
             </fieldset>
           ))}
-          <button
-            className="primary"
-            disabled={disabled || submitting || waiting}
-          >
-            {submitting ? "Sending answer…" : "Send answer"}
-          </button>
+          {!terminal ? (
+            <button className="primary" disabled={blocked}>
+              {submitting ? "Sending answer…" : "Send answer"}
+            </button>
+          ) : null}
         </form>
       ) : request.kind === "approval" ? (
         <div className="permission-choices">
@@ -122,8 +168,8 @@ export function RequestCard({
             <button
               key={choice}
               className={choice === "deny" ? "deny" : "primary"}
-              disabled={disabled || submitting || waiting}
-              onClick={() => void submit({ choice })}
+              disabled={blocked}
+              onClick={() => void submit(() => onReply(request, { choice }))}
             >
               {(
                 {
@@ -145,5 +191,78 @@ export function RequestCard({
         </p>
       ) : null}
     </section>
+  );
+}
+
+function AnswerInput({
+  question: q,
+  value,
+  onChange,
+}: {
+  question: Question;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const multi = q.multiSelect && q.choices.length > 0;
+  let selected: string[] = [];
+  if (multi) {
+    try {
+      selected = JSON.parse(value || "[]") as string[];
+    } catch {
+      /* Old unsupported draft. */
+    }
+  }
+  const other = multi
+    ? selected.filter((s) => !q.choices.includes(s)).join(", ")
+    : q.choices.includes(value)
+      ? ""
+      : value;
+  return (
+    <>
+      {q.choices.length ? (
+        <div className="choices">
+          {q.choices.map((choice, index) => (
+            <label className="clarify-choice" key={index}>
+              <input
+                type={multi ? "checkbox" : "radio"}
+                name={`choice-${q.qid}`}
+                checked={multi ? selected.includes(choice) : value === choice}
+                onChange={() =>
+                  onChange(
+                    multi
+                      ? JSON.stringify(
+                          selected.includes(choice)
+                            ? selected.filter((s) => s !== choice)
+                            : [...selected, choice],
+                        )
+                      : choice,
+                  )
+                }
+              />
+              {choice}
+            </label>
+          ))}
+        </div>
+      ) : null}
+      {q.allowFreeText !== false ? (
+        <label className="answer-label">
+          {q.choices.length ? "Other answer" : "Your answer"}
+          <input
+            value={other}
+            maxLength={15000}
+            onChange={(e) =>
+              onChange(
+                multi
+                  ? JSON.stringify([
+                      ...selected.filter((s) => q.choices.includes(s)),
+                      ...(e.target.value ? [e.target.value] : []),
+                    ])
+                  : e.target.value,
+              )
+            }
+          />
+        </label>
+      ) : null}
+    </>
   );
 }

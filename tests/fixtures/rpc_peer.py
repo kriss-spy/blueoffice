@@ -27,6 +27,7 @@ session = "live-fixture-" + uuid.uuid4().hex[:8]
 seq = 0
 busy = False
 requests = {}
+replay_events = []
 write_lock = threading.Lock()
 cancel_generation = 0
 
@@ -87,6 +88,11 @@ def task(prompt, generation):
         os._exit(9)
     if "slow" in lower:
         return
+    if "prose" in lower:
+        event("message.complete", {"text": "Which desk should we use?", "status": "complete"})
+        busy = False
+        event("session.info", {"running": False})
+        return
     if any(word in lower for word in ("question", "batch", "approval", "secret")):
         kind = "approval" if "approval" in lower else "secret" if "secret" in lower else "clarify"
         params = {"session_id": session, "question": "Which desk should we use?", "choices": ["Oak", "Birch"]}
@@ -94,13 +100,30 @@ def task(prompt, generation):
             params = {"session_id": session, "questions": [
                 {"qid": "q0", "question": "Which desk?", "choices": ["Oak", "Birch"]},
                 {"qid": "q1", "question": "Which lamp?", "choices": ["Blue", "White"]}]}
+        if "multi" in lower:
+            if "questions" in params:
+                params["questions"][1]["multi_select"] = True
+            else:
+                params["multi_select"] = True
+        if "malformed" in lower:
+            params["questions"] = [None]
         if kind == "approval":
             params = {"session_id": session, "request_id": "inner-permission", "description": "Allow a synthetic command?", "command": "fixture-action", "choices": ["once", "deny"]}
         if kind == "secret":
             params = {"session_id": session, "prompt": "PRIVATE_SECRET_CANARY"}
-        frame = {"id": f"srq-{generation}", "method": kind, "params": params}
+        frame = {"id": generation if "numeric" in lower else f"srq-{generation}", "method": kind, "params": params}
         requests[frame["id"]] = frame
         write(frame)
+        if "expire" in lower:
+            def expire():
+                time.sleep(0.25)
+                if frame["id"] in requests:
+                    requests.pop(frame["id"])
+                    event("request.cancel", {"id": frame["id"], "reason": "timeout"})
+                    finish(generation)
+            threading.Thread(target=expire, daemon=True).start()
+        if "disconnect" in lower:
+            threading.Timer(0.25, lambda: os._exit(9)).start()
         return
     event("tool.complete", {"tool_id": f"tool-{generation}", "name": "terminal", "result": {"error": "synthetic tool failure recovered", "secret": "TOOL_SECRET_CANARY"}})
     finish(generation)
@@ -114,8 +137,18 @@ for line in sys.stdin:
         log.write(json.dumps(frame) + "\n")
     if not method:
         if rid in requests:
-            requests.pop(rid)
-            threading.Thread(target=finish, args=(cancel_generation,), daemon=True).start()
+            if scenario == "replay-cancel":
+                requests.pop(rid)
+                seq += 1
+                replay_events.append({"type": "request.cancel", "session_id": session, "seq": seq,
+                                      "payload": {"id": rid, "reason": "timeout"}})
+                continue
+            def resolve(request_id, generation):
+                if scenario == "delayed-answer":
+                    time.sleep(0.4)
+                requests.pop(request_id, None)
+                finish(generation)
+            threading.Thread(target=resolve, args=(rid, cancel_generation), daemon=True).start()
         continue
     result = {}
     if method == "session.create":
@@ -124,7 +157,25 @@ for line in sys.stdin:
         result = {"running": busy, "open_requests": list(requests.values())}
         time.sleep(0.05)  # Response can arrive after a newer settled session.info.
     elif method == "session.events.since":
-        result = {"open_requests": list(requests.values()), "events": [], "epoch": "fixture-epoch", "latest_seq": seq}
+        result = {"open_requests": list(requests.values()), "events": replay_events, "epoch": "fixture-epoch", "latest_seq": seq}
+    elif method == "clarify.lock":
+        request = requests.get(params["request_id"])
+        if not request:
+            result = {"status": "expired"}
+        else:
+            qids = [q["qid"] for q in request["params"]["questions"]]
+            if params["question_id"] not in qids:
+                write({"id": rid, "error": {"code": -32602, "message": "foreign question"}})
+                continue
+            locked = request["params"].setdefault("answers", {})
+            locked[params["question_id"]] = params["answer"]
+            remaining = [q for q in qids if q not in locked]
+            result = {"status": "ok", "remaining": remaining}
+            if scenario == "lost-lock-ack":
+                os._exit(9)
+            if not remaining:
+                requests.pop(params["request_id"])
+                threading.Thread(target=finish, args=(cancel_generation,), daemon=True).start()
     elif method == "prompt.submit":
         if busy:
             result = {"status": "queued"}

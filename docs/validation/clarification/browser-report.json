@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "keyboard batch lock, two-tab duplicate rejected, persisted lock on reload, multi-select final reply and same-turn completion; mobile without overflow",
+    "ordinary assistant question has no pending request",
+    "single native free-text Other answer",
+    "cancellation retained as a closed question with reason",
+    "expiry visibly closes the exact request",
+    "transport loss retains attention and disables uncertain sending"
+  ],
+  "pageErrors": []
+}

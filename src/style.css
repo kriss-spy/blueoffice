@@ -1072,3 +1072,20 @@ select {
 .settings-actions .primary {
   margin-top: 0;
 }
+
+.clarify-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line, #e3ded5);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  cursor: pointer;
+}
+.clarify-choice input {
+  width: auto;
+  accent-color: #41664f;
+}
+.request-card fieldset:disabled {
+  opacity: 0.7;
+}
