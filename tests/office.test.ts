@@ -39,6 +39,42 @@ async function until(check: () => boolean, timeout = 5000) {
   }
 }
 
+test("split credentials never reach streamed snapshots or persisted messages; harmless suffixes survive", async (t) => {
+  const { office, agent, current, target, factory, store } = await setup(
+    t,
+    "split-credential",
+  );
+  const key = "synthetic-review-key";
+  const launch = factory.launch.bind(factory);
+  factory.launch = async (agent) => {
+    const result = await launch(agent);
+    result.options.env!.BLUEOFFICE_PROXY_KEY = key;
+    return result;
+  };
+  const snapshots: string[] = [];
+  office.on("change", () => snapshots.push(JSON.stringify(office.snapshot())));
+  await office.start(agent.id);
+  await office.prompt(
+    agent.id,
+    randomUUID(),
+    target(),
+    "stream credential regression",
+  );
+  await until(() => current().work === "completed" && !current().busy);
+  assert.equal(
+    current().messages.find((m) => m.role === "assistant")!.text,
+    "Safe prefix [redacted] done synt",
+  );
+  assert.ok(snapshots.length > 0);
+  for (const value of [...snapshots, JSON.stringify(store.agents())]) {
+    assert.ok(!value.includes(key));
+    assert.ok(
+      !value.includes("synthetic-"),
+      "A possible credential prefix escaped before the next delta",
+    );
+  }
+});
+
 test("owned runtime streams public work, admits one task and persists stable identity", async (t) => {
   const { office, agent, current, target, directory } = await setup(t);
   await office.start(agent.id);

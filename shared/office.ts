@@ -1,3 +1,4 @@
+import type { ModelId, RouteStatus } from "./routes.js";
 export type Lifecycle =
   "stopped" | "starting" | "ready" | "stopping" | "failed" | "unknown";
 export type Work =
@@ -58,6 +59,7 @@ export interface Conversation {
   createdAt: string;
 }
 export interface OfficeAgent {
+  model: ModelId;
   id: string;
   name: string;
   profileName: string;
@@ -78,9 +80,12 @@ export interface OfficeAgent {
   requests: PendingRequest[];
   receipts: Receipt[];
   error: string | null;
+  failureKind?:
+    "quota" | "authentication" | "connection" | "route" | "turn" | null;
   createdAt: string;
 }
 export interface Snapshot {
+  routes: RouteStatus[];
   revision: number;
   agents: OfficeAgent[];
   mode: "live" | "fixture";

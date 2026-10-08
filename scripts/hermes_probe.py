@@ -45,8 +45,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", default=shutil.which("hermes"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/hermes-contract"))
-    parser.add_argument("--suite", choices=("protocol", "office"), default="protocol")
+    parser.add_argument("--suite", choices=("protocol", "office", "routes"), default="protocol")
+    parser.add_argument("--live", action="store_true", help="Routes suite only: deliberately use the real local CLIProxyAPI")
     args = parser.parse_args()
+    if args.live and args.suite != "routes":
+        parser.error("--live is supported only for the routes suite")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     # A failed rerun must revoke previous passing evidence before discovery starts.
@@ -68,6 +71,20 @@ def main():
     mounts = [installation["source"], str(Path(installation["runtime"]).parents[1]),
               str(Path(installation["venv"]).parent)]
     command = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--clearenv"]
+    proxy_digest = None
+    if args.live:
+        proxy_config = Path.home() / ".cli-proxy-api/config.yaml"
+        proxy_digest = hashlib.sha256(proxy_config.read_bytes()).hexdigest()
+        key_path = Path.home() / ".cli-proxy-api/.api-key"
+        if not key_path.is_file():
+            parser.error("The server-side CLIProxyAPI key is unavailable")
+        mock_path = project / "artifacts/routes-mock/report.json"
+        try:
+            mock = json.loads(mock_path.read_text())
+            assert mock.get("passed") and not mock.get("live") and mock.get("hermesRevision") == installation["revision"]
+        except Exception:
+            parser.error("Run the mock routes suite successfully before a live probe")
+        command += ["--share-net", "--ro-bind", str(key_path), "/probe-key", "--setenv", "BLUEOFFICE_LIVE", "1"]
     for directory in ("/usr", "/lib", "/lib64", "/bin", "/etc"):
         if Path(directory).exists():
             command += ["--ro-bind", directory, directory]
@@ -79,12 +96,12 @@ def main():
     for label in ("alpha", "beta"):
         relative = Path(installation["venv"]).relative_to(Path(installation["venv"]).parents[4])
         command += ["--ro-bind", installation["venv"], str(Path("/tmp") / label / relative)]
-    if args.suite == "office":
+    if args.suite in ("office", "routes"):
         node = shutil.which("node")
         if not node:
             parser.error("Node.js is required for the office integration probe")
         node_root = str(Path(node).resolve().parents[1])
-        command += ["--ro-bind", node_root, node_root, "--dir", "/office", "--setenv", "BLUEOFFICE_NODE", node]
+        command += ["--ro-bind", node_root, node_root, "--dir", "/office", "--setenv", "BLUEOFFICE_NODE", node, "--setenv", "BLUEOFFICE_SUITE", args.suite]
         # Never expose the checkout wholesale: it may contain live .blueoffice data or credentials.
         for entry in ("server", "shared", "scripts", "tests", "node_modules", "package.json", "tsconfig.json"):
             command += ["--ro-bind", str(project / entry), f"/office/{entry}"]
@@ -99,6 +116,8 @@ def main():
         report_path.write_text(json.dumps({"passed": False, "runner_completed": False, "error": str(exc)}))
         raise
     report = json.loads(report_path.read_text())
+    if proxy_digest:
+        report["proxyConfigUnchanged"] = proxy_digest == hashlib.sha256(proxy_config.read_bytes()).hexdigest()
     report["runner_completed"] = result.returncode == 0
     report["passed"] = report.get("passed") is True and report["runner_completed"]
     report_path.write_text(json.dumps(report, indent=2) + "\n")

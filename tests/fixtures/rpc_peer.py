@@ -64,6 +64,15 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
+    if scenario == "split-credential":
+        key = os.environ["BLUEOFFICE_PROXY_KEY"]
+        for part in ("Safe prefix ", key[:10], key[10:14], key[14:], " done ", "synt"):
+            event("message.delta", {"text": part})
+            time.sleep(0.01)
+        event("message.complete", {"text": "", "status": "complete"})
+        busy = False
+        event("session.info", {"running": False})
+        return
     if "long output" in lower:
         event("message.delta", {"text": "I will inspect the workspace."})
         event("message.interim", {"text": "I will inspect the workspace.", "already_streamed": True})

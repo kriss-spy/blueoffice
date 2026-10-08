@@ -2,11 +2,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { OfficeAgent } from "../shared/office.js";
 import type { RuntimeFactory } from "./runtime.js";
+import { RouteRegistry } from "./routes.js";
 import type { Launch } from "./rpc.js";
 
 /** Opt-in offline mode. Never selected as a fallback after a live failure. */
 export class FixtureRuntime implements RuntimeFactory {
   mode = "fixture" as const;
+  routes() {
+    return new RouteRegistry(undefined, true).statuses();
+  }
   constructor(
     private root: string,
     private scenario = "normal",

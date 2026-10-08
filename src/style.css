@@ -21,6 +21,7 @@ body {
 }
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -34,6 +35,7 @@ button:disabled {
 }
 button,
 input,
+select,
 textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -49,6 +51,7 @@ button:hover:not(:disabled) {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid #f0ad4e;
@@ -73,12 +76,14 @@ a {
   color: inherit;
 }
 input,
+select,
 textarea {
   padding: 12px;
   background: #fff;
   color: var(--ink);
 }
-input {
+input,
+select {
   width: 100%;
 }
 .topbar {
@@ -798,7 +803,8 @@ input {
   font-size: 12px;
   margin: 20px 0;
 }
-.create-dialog input {
+.create-dialog input,
+.create-dialog select {
   margin-top: 8px;
 }
 .create-dialog .form-note {
