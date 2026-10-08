@@ -100,7 +100,16 @@ export class OfficeStore {
         validateLayout(parsed.data).length
       )
         continue;
-      if (Number(row.revision) === Number(rows[0].revision)) return parsed.data;
+      if (Number(row.revision) === Number(rows[0].revision)) {
+        const agents = this.agents();
+        const ids = new Set(agents.map((agent) => agent.id));
+        if (
+          Object.keys(parsed.data.assignments).some((id) => !ids.has(id)) ||
+          agents.some((agent) => !(agent.id in parsed.data.assignments))
+        )
+          continue;
+        return parsed.data;
+      }
       const agents = this.agents();
       const draft: LayoutDraft = {
         placements: parsed.data.placements,
@@ -153,6 +162,17 @@ export class OfficeStore {
   ): LayoutSnapshot {
     this.db.exec("BEGIN IMMEDIATE");
     try {
+      const latest = Number(
+        this.db
+          .prepare(
+            "SELECT COALESCE(MAX(revision),0) AS revision FROM layout_revisions",
+          )
+          .get()!.revision,
+      );
+      if (latest !== revision - 1)
+        throw new LayoutError(
+          "The office layout changed while saving. Reload the latest revision before trying again.",
+        );
       const snapshot: LayoutSnapshot = {
         ...draft,
         schemaVersion: 1,

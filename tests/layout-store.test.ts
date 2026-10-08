@@ -188,3 +188,29 @@ test("first layout repairs missing or duplicate legacy desk references transacti
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("valid-shaped latest layout with broken assistant references is corrupt and restores previous references", () => {
+  const { root, path, store } = setup();
+  try {
+    store.save(agent(), "created", "created");
+    const service = new LayoutService(store);
+    const previous = service.snapshot();
+    const latest = service.save({
+      baseRevision: previous.revision,
+      draft: removePlacement(previous, "desk-2"),
+    });
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw
+      .prepare("UPDATE layout_revisions SET body=? WHERE revision=?")
+      .run(JSON.stringify({ ...latest, assignments: {} }), latest.revision);
+    raw.close();
+    const reopened = new OfficeStore(path);
+    const recovered = new LayoutService(reopened).snapshot();
+    assert.equal(recovered.recoveredFrom, previous.revision);
+    assert.equal(recovered.assignments["agent-1"], "desk-1");
+    reopened.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

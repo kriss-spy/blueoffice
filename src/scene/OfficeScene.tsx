@@ -63,6 +63,7 @@ export function OfficeScene({
   onLayoutSaved?: (layout: LayoutSnapshot) => void;
   locate?: { deskId: string; token: number };
 }) {
+  const lastLocate = useRef<number | undefined>(undefined);
   const [savedLayout, setSavedLayout] = useState<LayoutSnapshot | undefined>(
     suppliedLayout,
   );
@@ -207,11 +208,12 @@ export function OfficeScene({
     );
   };
   useEffect(() => {
-    if (!locate) return;
+    if (!locate || lastLocate.current === locate.token) return;
     const desk = (savedLayout?.placements ?? []).find(
       (p) => p.id === locate.deskId,
     );
     if (desk) {
+      lastLocate.current = locate.token;
       setSelectedDesk(desk.id);
       setCommand(
         (c) =>

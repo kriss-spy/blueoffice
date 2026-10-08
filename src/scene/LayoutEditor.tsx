@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { command } from "../api";
 import type { OfficeAgent } from "../../shared/office";
 import {
   completeWorkstation,
@@ -126,18 +127,10 @@ export function LayoutEditor({
     setBusy(true);
     setMessage("");
     try {
-      const session = await (await fetch("/api/session")).json();
-      const response = await fetch("/api/layout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-blueoffice-csrf": session.csrf,
-        },
-        body: JSON.stringify({ baseRevision: snapshot.revision, draft }),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error ?? "Unable to save the office layout.");
+      const result = (await command("/api/layout", {
+        baseRevision: snapshot.revision,
+        draft,
+      })) as LayoutSnapshot;
       saved(result);
     } catch (error) {
       setMessage(
