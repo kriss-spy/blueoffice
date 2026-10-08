@@ -2,6 +2,15 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
 import type { OfficeAgent } from "../shared/office.js";
+import type { ModelId } from "../shared/routes.js";
+
+export interface AdoptionIntent {
+  id: string;
+  name: string;
+  profileHome: string;
+  model: ModelId;
+  workspace: string;
+}
 
 /** Office records and normalized events never write Hermes' database. */
 export class OfficeStore {
@@ -13,7 +22,26 @@ export class OfficeStore {
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT UNIQUE NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS commands (agent_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(agent_id,id));`);
+      CREATE TABLE IF NOT EXISTS commands (agent_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(agent_id,id));
+      CREATE TABLE IF NOT EXISTS adoption_intents (profile_home TEXT PRIMARY KEY, body TEXT NOT NULL);`);
+  }
+  adoptions(): AdoptionIntent[] {
+    return this.db
+      .prepare("SELECT body FROM adoption_intents")
+      .all()
+      .map((row) => JSON.parse(row.body as string));
+  }
+  beginAdoption(intent: AdoptionIntent) {
+    this.db
+      .prepare(
+        "INSERT INTO adoption_intents VALUES (?,?) ON CONFLICT(profile_home) DO UPDATE SET body=excluded.body",
+      )
+      .run(intent.profileHome, JSON.stringify(intent));
+  }
+  finishAdoption(profileHome: string) {
+    this.db
+      .prepare("DELETE FROM adoption_intents WHERE profile_home=?")
+      .run(profileHome);
   }
   agents(): OfficeAgent[] {
     return this.db

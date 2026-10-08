@@ -19,6 +19,8 @@ Live mode creates a dedicated native Hermes profile per agent. It reads `~/.cli-
 
 Route verification runs synthetic failure tests first, then five deliberately small live calls per model (text, tool continuation, auxiliary, and delegated-child work). It stores local admission evidence in the selected office data directory. Without matching live evidence, model options stay disabled. See [routing evidence and limits](docs/validation/model-routing.md). `npm run verify:routes` without `--live` uses no real credentials or models and cannot admit a route.
 
+Use **Agent settings** to edit a stopped profile and read back each saved section. Name changes appear immediately; model, workspace, persona, tool and approval changes apply at the next start. **Adopt an existing profile instead** inspects ownership and requires the single-writer acknowledgement before changing settings. Conflicting edits require a reload. See [profile settings evidence and limits](docs/validation/profile-settings.md).
+
 For an offline, visibly labeled demonstration with no model calls:
 
 ```sh
@@ -35,6 +37,7 @@ npm run build
 python3 -m unittest discover -s tests -v
 python3 scripts/hermes_probe.py
 python3 scripts/hermes_probe.py --suite office --output artifacts/office-runtime
+python3 scripts/hermes_probe.py --suite profiles --output artifacts/profiles
 ```
 
 The installed-runtime probes require bubblewrap. They use disposable profiles and a synthetic provider inside a private network/process namespace, with no live model calls. See [owned runtime/chat evidence](docs/validation/owned-chat.md) and [native protocol evidence](docs/validation/hermes-contract.md). Advanced human-input handling, durable replay, visual gates, and release verification remain open.

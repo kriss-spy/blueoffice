@@ -3,6 +3,7 @@ import type { Snapshot } from "../shared/office";
 import { attention, status } from "../shared/office";
 import { command, session } from "./api";
 import { Chat } from "./Chat";
+import { SettingsDialog } from "./SettingsDialog";
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -17,6 +18,8 @@ export function App() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [adoptionPath, setAdoptionPath] = useState("");
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const agents = snapshot.agents;
@@ -60,6 +63,9 @@ export function App() {
         name: data.get("name"),
         workspace: data.get("workspace"),
         model: data.get("model"),
+        soul: data.get("soul") ?? "",
+        toolsets: data.getAll("toolsets"),
+        approvalMode: data.get("approvalMode"),
       })) as { id: string };
       select(result.id);
       dialog.current?.close();
@@ -198,6 +204,25 @@ export function App() {
               </button>
             </div>
           ) : null}
+          {snapshot.pendingAdoptions?.map((pending) => (
+            <div
+              key={pending.profileHome}
+              className="error-banner"
+              role="status"
+            >
+              <p>
+                Adoption of {pending.name} needs review: {pending.profileHome}
+              </p>
+              <button
+                onClick={() => {
+                  setAdoptionPath(pending.profileHome);
+                  setSettingsFor("adopt");
+                }}
+              >
+                Review adoption
+              </button>
+            </div>
+          ))}
           {agent ? (
             <section className="agent-overview" aria-label="Selected agent">
               <div className="agent-badge">
@@ -263,6 +288,13 @@ export function App() {
                     ? "Agent is running"
                     : "Start agent"}
               </button>
+              <button
+                className="settings-button"
+                disabled={!connected}
+                onClick={() => setSettingsFor(agent.id)}
+              >
+                Agent settings
+              </button>
               <p className="lifecycle-note">
                 Interrupt ends a task. Stop closes this agent’s runtime. Closing
                 this tab keeps it running.
@@ -327,6 +359,16 @@ export function App() {
           </aside>
         )}
       </div>
+      {settingsFor ? (
+        <SettingsDialog
+          key={settingsFor}
+          agent={agents.find((a) => a.id === settingsFor)}
+          routes={snapshot.routes}
+          close={() => setSettingsFor(null)}
+          adopted={select}
+          initialPath={adoptionPath}
+        />
+      ) : null}
       <dialog ref={dialog} className="create-dialog">
         <form onSubmit={add}>
           <div className="dialog-title">
@@ -339,6 +381,16 @@ export function App() {
               ×
             </button>
           </div>
+          <button
+            type="button"
+            className="adopt-link"
+            onClick={() => {
+              dialog.current?.close();
+              setSettingsFor("adopt");
+            }}
+          >
+            Adopt an existing profile instead
+          </button>
           <p>
             A new, separate profile keeps this assistant’s conversations and
             tools together.
@@ -392,6 +444,52 @@ export function App() {
               --live in the server project, then refresh to load the results.
             </p>
           ) : null}
+          <label>
+            Persona / SOUL
+            <textarea
+              name="soul"
+              rows={4}
+              maxLength={32000}
+              placeholder="How should this assistant work with you?"
+            />
+          </label>
+          <fieldset className="tool-choices">
+            <legend>Enabled tool groups</legend>
+            <label>
+              <input
+                type="checkbox"
+                name="toolsets"
+                value="terminal"
+                defaultChecked
+              />
+              Terminal commands
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                name="toolsets"
+                value="file"
+                defaultChecked
+              />
+              Read and edit files
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                name="toolsets"
+                value="clarify"
+                defaultChecked
+              />
+              Ask structured questions
+            </label>
+          </fieldset>
+          <label>
+            Command approvals
+            <select name="approvalMode" defaultValue="manual">
+              <option value="manual">Ask for permission</option>
+              <option value="off">Run without permission prompts</option>
+            </select>
+          </label>
           <p className="form-note">
             Choose an existing folder. Character and workstation assignments
             will follow in the room editor.

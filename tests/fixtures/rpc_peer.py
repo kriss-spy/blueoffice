@@ -10,7 +10,7 @@ import time
 import uuid
 
 profile, scenario = Path(sys.argv[1]), sys.argv[2]
-lease = open(profile / ".fixture-lease", "w")
+lease = open(profile / ".blueoffice-lease", "w")
 try:
     fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except BlockingIOError:

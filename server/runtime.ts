@@ -7,6 +7,13 @@ import type { OfficeAgent } from "../shared/office.js";
 import { RouteRegistry, routingConfig, HERMES_REVISION } from "./routes.js";
 import { type ModelId, type RouteStatus } from "../shared/routes.js";
 import type { Launch } from "./rpc.js";
+import { profileOperation } from "./profiles.js";
+import type {
+  ProfileDefaults,
+  ProfileRequest,
+  ProfileSnapshot,
+  SettingsResult,
+} from "../shared/settings.js";
 
 const execute = promisify(execFile);
 export interface RuntimeFactory {
@@ -16,8 +23,10 @@ export interface RuntimeFactory {
     id: string,
     workspace: string,
     model?: ModelId,
+    defaults?: ProfileDefaults,
   ): Promise<{ profileName: string; profileHome: string }>;
   launch(agent: OfficeAgent): Promise<Launch>;
+  profile(request: ProfileRequest): Promise<ProfileSnapshot | SettingsResult>;
 }
 export interface Installation {
   source: string;
@@ -39,6 +48,10 @@ export class HermesRuntime implements RuntimeFactory {
   ) {}
   routes() {
     return this.registry.statuses();
+  }
+  async profile(request: ProfileRequest) {
+    if (request.values) this.registry.require(request.values.model);
+    return profileOperation(await this.discover(), request);
   }
   private discover(): Promise<Installation> {
     if (this.testInstallation) return Promise.resolve(this.testInstallation);
@@ -66,6 +79,7 @@ export class HermesRuntime implements RuntimeFactory {
     id: string,
     workspace: string,
     model: ModelId = "glm-5.3-flash",
+    defaults?: ProfileDefaults,
   ) {
     this.registry.require(model);
     if (!workspace.startsWith("/") || !(await stat(workspace)).isDirectory())
@@ -87,8 +101,10 @@ export class HermesRuntime implements RuntimeFactory {
         {
           ...routingConfig(model),
           terminal: { cwd: workspace, backend: "local" },
-          approvals: { mode: "manual" },
-          platform_toolsets: { cli: ["terminal", "file", "clarify"] },
+          approvals: { mode: defaults?.approvalMode ?? "manual" },
+          platform_toolsets: {
+            cli: defaults?.toolsets ?? ["terminal", "file", "clarify"],
+          },
           mcp_servers: {},
         },
         null,
@@ -96,6 +112,15 @@ export class HermesRuntime implements RuntimeFactory {
       ),
       { mode: 0o600, flag: "wx" },
     );
+    await writeFile(
+      join(profileHome, ".env"),
+      "# This independent profile has no inherited credentials.\n",
+      { mode: 0o600, flag: "wx" },
+    );
+    await writeFile(join(profileHome, "SOUL.md"), defaults?.soul ?? "", {
+      mode: 0o600,
+      flag: "wx",
+    });
     return { profileName, profileHome };
   }
   async launch(agent: OfficeAgent): Promise<Launch> {
@@ -124,6 +149,7 @@ export class HermesRuntime implements RuntimeFactory {
       HERMES_PYTHON_SRC_ROOT: installation.source,
       HERMES_DISABLE_LAZY_INSTALLS: "1",
       HERMES_TUI_GATEWAY_SHUTDOWN_GRACE_S: "1",
+      HERMES_YOLO_MODE: "0",
       BLUEOFFICE_PROXY_KEY: key,
       OPENAI_BASE_URL: "http://127.0.0.1:8317/v1",
     };
@@ -141,7 +167,7 @@ export class HermesRuntime implements RuntimeFactory {
       );
     } catch {
       throw new Error(
-        "The profile's effective model, API family, credential path or retry policy no longer matches its verified BlueOffice route. Restore its managed routing settings before starting.",
+        "The profile's effective model, API family, credential path, retry or approval policy no longer matches its verified BlueOffice route. Restore managed settings and remove conflicting approval environment overrides before starting.",
       );
     }
     return {

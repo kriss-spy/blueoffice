@@ -45,7 +45,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", default=shutil.which("hermes"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/hermes-contract"))
-    parser.add_argument("--suite", choices=("protocol", "office", "routes"), default="protocol")
+    parser.add_argument("--suite", choices=("protocol", "office", "routes", "profiles"), default="protocol")
     parser.add_argument("--live", action="store_true", help="Routes suite only: deliberately use the real local CLIProxyAPI")
     args = parser.parse_args()
     if args.live and args.suite != "routes":
@@ -96,7 +96,7 @@ def main():
     for label in ("alpha", "beta"):
         relative = Path(installation["venv"]).relative_to(Path(installation["venv"]).parents[4])
         command += ["--ro-bind", installation["venv"], str(Path("/tmp") / label / relative)]
-    if args.suite in ("office", "routes"):
+    if args.suite in ("office", "routes", "profiles"):
         node = shutil.which("node")
         if not node:
             parser.error("Node.js is required for the office integration probe")
