@@ -14,6 +14,13 @@ import { attention } from "../shared/office.js";
 import { OfficeStore } from "./store.js";
 import { RpcChild, RpcFailure, type Frame } from "./rpc.js";
 import type { RuntimeFactory } from "./runtime.js";
+import type {
+  ProfileDefaults,
+  ProfileSettings,
+  ProfileSnapshot,
+  SettingsResult,
+} from "../shared/settings.js";
+import { settingsSchema } from "../shared/settings.js";
 
 const now = () => new Date().toISOString();
 const text = (value: unknown, limit = 32_000) =>
@@ -36,6 +43,13 @@ export class Office extends EventEmitter {
   private runtimes = new Map<string, RpcChild>();
   private closing = false;
   private startups = new Set<Promise<void>>();
+  private mutations = new Set<Promise<unknown>>();
+  private pendingCreations = 0;
+  private trackMutation<T>(work: Promise<T>): Promise<T> {
+    this.mutations.add(work);
+    return work.finally(() => this.mutations.delete(work));
+  }
+  private settingsWriters = new Set<string>();
   constructor(
     private store: OfficeStore,
     readonly factory: RuntimeFactory,
@@ -101,10 +115,28 @@ export class Office extends EventEmitter {
     this.store.save(agent, kind, eventKey);
     this.emit("change");
   }
-  async create(
+  create(
     name: string,
     workspace: string,
     model: ModelId = "glm-5.3-flash",
+    defaults?: ProfileDefaults,
+  ) {
+    if (this.agents.size + this.pendingCreations >= 8)
+      throw new OfficeError(
+        "This beta supports up to eight configured agents.",
+      );
+    this.pendingCreations++;
+    return this.trackMutation(
+      this.createAgent(name, workspace, model, defaults).finally(
+        () => this.pendingCreations--,
+      ),
+    );
+  }
+  private async createAgent(
+    name: string,
+    workspace: string,
+    model: ModelId = "glm-5.3-flash",
+    defaults?: ProfileDefaults,
   ) {
     if (this.closing) throw new OfficeError("Office is shutting down.");
     if (this.agents.size >= 8)
@@ -112,13 +144,27 @@ export class Office extends EventEmitter {
         "This beta supports up to eight configured agents.",
       );
     const id = randomUUID();
-    const profile = await this.factory.prepare(id, workspace, model);
+    if (defaults) settingsSchema.parse({ ...defaults, model, workspace });
+    const profile = await this.factory.prepare(id, workspace, model, defaults);
+    return this.registerAgent(id, name, workspace, model, profile);
+  }
+  private registerAgent(
+    id: string,
+    name: string,
+    workspace: string,
+    model: ModelId,
+    profile: { profileHome: string; profileName: string },
+    configRevision?: string,
+  ) {
     const agent: OfficeAgent = {
       id,
       name,
       model,
       workspace,
       ...profile,
+      configRevision,
+      settingsVersion: 0,
+      configHistory: [],
       avatarId: "unassigned",
       deskId: null,
       lifecycle: "stopped",
@@ -139,6 +185,148 @@ export class Office extends EventEmitter {
     this.agents.set(id, agent);
     this.changed(agent, "agent.created");
     return structuredClone(agent);
+  }
+  async inspectProfile(profileHome: string) {
+    return this.factory.profile({
+      action: "read",
+      profileHome,
+    }) as Promise<ProfileSnapshot>;
+  }
+  async settings(id: string): Promise<ProfileSnapshot> {
+    const agent = this.get(id);
+    const snapshot = await this.inspectProfile(agent.profileHome);
+    if (snapshot.ownerId !== id)
+      throw new OfficeError(
+        "Profile ownership changed. Settings are unavailable.",
+      );
+    return {
+      ...snapshot,
+      revision: `${snapshot.revision}:${agent.settingsVersion ?? 0}`,
+    };
+  }
+  saveSettings(
+    id: string,
+    expectedRevision: string,
+    values: ProfileSettings,
+    name: string,
+  ) {
+    return this.trackMutation(
+      this.saveProfileSettings(id, expectedRevision, values, name),
+    );
+  }
+  private async saveProfileSettings(
+    id: string,
+    expectedRevision: string,
+    values: ProfileSettings,
+    name: string,
+  ) {
+    const agent = this.get(id);
+    if (this.closing || this.settingsWriters.has(id))
+      throw new OfficeError("A settings operation is already in progress.");
+    if (
+      this.runtimes.has(id) ||
+      !["stopped", "failed"].includes(agent.lifecycle)
+    )
+      throw new OfficeError(
+        "Stop the agent before saving profile settings. Changes apply at its next start.",
+      );
+    const [profileRevision, version] = expectedRevision.split(":");
+    if (version !== String(agent.settingsVersion ?? 0))
+      throw new OfficeError(
+        "These settings were changed by another editor. Reload before saving.",
+      );
+    values = settingsSchema.parse(values);
+    this.settingsWriters.add(id);
+    try {
+      const result = (await this.factory.profile({
+        action: "save",
+        agentId: id,
+        profileHome: agent.profileHome,
+        expectedRevision: profileRevision,
+        values,
+      })) as SettingsResult;
+      // Record effective values only after readback, including a partially successful save.
+      if (result.sections.model?.applied)
+        agent.model = result.snapshot.values.model;
+      if (result.sections.workspace?.applied)
+        agent.workspace = result.snapshot.values.workspace;
+      agent.name = name;
+      agent.configRevision = result.snapshot.revision;
+      agent.settingsVersion = (agent.settingsVersion ?? 0) + 1;
+      (agent.configHistory ??= []).push({
+        revision: agent.configRevision,
+        at: now(),
+        applied: Object.keys(result.sections).filter(
+          (key) => result.sections[key as keyof ProfileSettings]?.applied,
+        ),
+        failed: Object.keys(result.sections).filter(
+          (key) => !result.sections[key as keyof ProfileSettings]?.applied,
+        ),
+      });
+      this.changed(agent, "settings.saved");
+      return {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          revision: `${result.snapshot.revision}:${agent.settingsVersion}`,
+        },
+      };
+    } finally {
+      this.settingsWriters.delete(id);
+    }
+  }
+  adopt(
+    name: string,
+    profileHome: string,
+    expectedRevision: string,
+    values: ProfileSettings,
+    acknowledgeOwnership: boolean,
+  ) {
+    if (this.agents.size + this.pendingCreations >= 8)
+      throw new OfficeError(
+        "This beta supports up to eight configured agents.",
+      );
+    this.pendingCreations++;
+    return this.trackMutation(
+      this.adoptProfile(
+        name,
+        profileHome,
+        expectedRevision,
+        values,
+        acknowledgeOwnership,
+      ).finally(() => this.pendingCreations--),
+    );
+  }
+  private async adoptProfile(
+    name: string,
+    profileHome: string,
+    expectedRevision: string,
+    values: ProfileSettings,
+    acknowledgeOwnership: boolean,
+  ) {
+    if (this.closing || this.agents.size >= 8)
+      throw new OfficeError("This office cannot add another agent right now.");
+    values = settingsSchema.parse(values);
+    const id = randomUUID();
+    const result = (await this.factory.profile({
+      action: "adopt",
+      profileHome,
+      agentId: id,
+      expectedRevision,
+      values,
+      acknowledgeOwnership,
+    })) as SettingsResult;
+    if (!result.ok) return { agent: null, result };
+    const snapshot = result.snapshot;
+    const agent = this.registerAgent(
+      id,
+      name,
+      snapshot.values.workspace,
+      values.model,
+      { profileHome: snapshot.profileHome, profileName: snapshot.profileName },
+      snapshot.revision,
+    );
+    return { agent, result };
   }
   private assertCurrent(agent: OfficeAgent, target: Target): RpcChild {
     if (
@@ -167,6 +355,10 @@ export class Office extends EventEmitter {
   private async startRuntime(id: string) {
     const agent = this.get(id);
     if (this.closing) throw new OfficeError("Office is shutting down.");
+    if (this.settingsWriters.has(id))
+      throw new OfficeError(
+        "Wait for the settings save to finish before starting.",
+      );
     if (
       this.runtimes.has(id) ||
       ["starting", "stopping", "ready"].includes(agent.lifecycle)
@@ -744,6 +936,6 @@ export class Office extends EventEmitter {
     );
     // Discovery/profile verification can still be awaiting IO before a child exists.
     // Keep the store alive until those starts observe closing and record their outcome.
-    await Promise.allSettled([...this.startups]);
+    await Promise.allSettled([...this.startups, ...this.mutations]);
   }
 }

@@ -59,6 +59,14 @@ export interface Conversation {
   createdAt: string;
 }
 export interface OfficeAgent {
+  settingsVersion?: number;
+  configRevision?: string;
+  configHistory?: {
+    revision: string;
+    at: string;
+    applied: string[];
+    failed: string[];
+  }[];
   model: ModelId;
   id: string;
   name: string;

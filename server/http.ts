@@ -9,6 +9,11 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { z } from "zod";
 import { Office, OfficeError } from "./office.js";
+import { ProfileError } from "./profiles.js";
+import { settingsSchema } from "../shared/settings.js";
+
+const nameInput = z.string().trim().min(1).max(60);
+const revisionInput = z.string().min(1).max(150);
 
 const target = z
   .object({ epoch: z.uuid(), sessionId: z.string().min(1).max(200) })
@@ -19,6 +24,13 @@ const createInput = z
     model: z.enum(MODEL_IDS).default("glm-5.3-flash"),
     name: z.string().trim().min(1).max(60),
     workspace: z.string().min(1).max(4096),
+    soul: settingsSchema.shape.soul.default(""),
+    toolsets: settingsSchema.shape.toolsets.default([
+      "terminal",
+      "file",
+      "clarify",
+    ]),
+    approvalMode: settingsSchema.shape.approvalMode.default("manual"),
   })
   .strict();
 const promptInput = z
@@ -171,7 +183,71 @@ export function officeServer(office: Office, assets = resolve("dist")) {
           send(
             res,
             201,
-            await office.create(input.name, input.workspace, input.model),
+            await office.create(input.name, input.workspace, input.model, {
+              soul: input.soul,
+              toolsets: input.toolsets,
+              approvalMode: input.approvalMode,
+            }),
+          );
+          return;
+        }
+        if (url.pathname === "/api/profiles/inspect" && req.method === "POST") {
+          const input = z
+            .object({ profileHome: z.string().min(1).max(4096) })
+            .strict()
+            .parse(await body(req));
+          send(res, 200, await office.inspectProfile(input.profileHome));
+          return;
+        }
+        if (url.pathname === "/api/profiles/adopt" && req.method === "POST") {
+          const input = z
+            .object({
+              name: nameInput,
+              profileHome: z.string().min(1).max(4096),
+              expectedRevision: revisionInput,
+              values: settingsSchema,
+              acknowledgeOwnership: z.literal(true),
+            })
+            .strict()
+            .parse(await body(req));
+          send(
+            res,
+            200,
+            await office.adopt(
+              input.name,
+              input.profileHome,
+              input.expectedRevision,
+              input.values,
+              input.acknowledgeOwnership,
+            ),
+          );
+          return;
+        }
+        const settingsRoute = /^\/api\/agents\/([a-f0-9-]{36})\/settings$/.exec(
+          url.pathname,
+        );
+        if (settingsRoute && req.method === "GET") {
+          send(res, 200, await office.settings(settingsRoute[1]));
+          return;
+        }
+        if (settingsRoute && req.method === "POST") {
+          const input = z
+            .object({
+              name: nameInput,
+              expectedRevision: revisionInput,
+              values: settingsSchema,
+            })
+            .strict()
+            .parse(await body(req));
+          send(
+            res,
+            200,
+            await office.saveSettings(
+              settingsRoute[1],
+              input.expectedRevision,
+              input.values,
+              input.name,
+            ),
           );
           return;
         }
@@ -247,7 +323,7 @@ export function officeServer(office: Office, assets = resolve("dist")) {
           error:
             "The command has invalid fields. Check the form and try again.",
         });
-      else if (error instanceof OfficeError)
+      else if (error instanceof OfficeError || error instanceof ProfileError)
         send(res, error.status, { error: error.message });
       else
         send(res, 500, {
