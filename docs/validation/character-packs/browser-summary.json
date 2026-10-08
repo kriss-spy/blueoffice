@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "checks": [
+    "actual normalized Yuuka imports with native materials",
+    "all mapped clips previewed with independent rigs and shared geometry",
+    "review gate before assignment",
+    "same-character assignments and nameplates",
+    "pending question survives placeholder and reassignment",
+    "one waiting rig pauses while the other continues",
+    "assignments and pending work survive browser reload",
+    "missing files produce diagnostic placeholders with live attention",
+    "restored bytes recover through library refresh"
+  ],
+  "errors": [],
+  "ref": {
+    "assetId": "yuuka.original",
+    "version": "525ae0fa-normalized-v1",
+    "sha256": "13cc8829ab2e477cced3dc41a7f1f7d3633c3fdd0a50d200c54113acedfe510e"
+  },
+  "preview": {
+    "ref": "yuuka.original/525ae0fa-normalized-v1/13cc8829ab2e477cced3dc41a7f1f7d3633c3fdd0a50d200c54113acedfe510e",
+    "reviewed": [
+      "Cafe_Idle",
+      "Cafe_Walk",
+      "Cafe_Reaction"
+    ],
+    "independence": {
+      "differentBoneIds": true,
+      "sharedGeometry": true
+    }
+  },
+  "agents": [
+    "3126a939-30b1-48b1-a74e-31e208a65e2e",
+    "9841471b-1197-49f8-9812-b686c0b32c25"
+  ],
+  "externalDependency": {
+    "passed": true,
+    "checks": [
+      "folder import preserves nested paths",
+      "external BIN loads through declared local dependency",
+      "unreviewed version cannot be assigned",
+      "import preserves existing assignments and pending requests"
+    ],
+    "errors": []
+  }
+}

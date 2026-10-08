@@ -131,6 +131,7 @@ export function OfficeScene({
   const visibleDesks = defaultDesks.filter(
     (desk, i) => i < 2 || agents.some((agent) => agent.deskId === desk.id),
   );
+  const selectedCharacter = occupants.find((o) => o.agent.id === selected);
   const camera = (action: CameraCommand["action"]) =>
     setCommand((c) => ({ action, id: c.id + 1 }));
   return (
@@ -255,7 +256,13 @@ export function OfficeScene({
                   {view.detail && <small>{view.detail}</small>}
                   {!desk && <small>Workstation missing</small>}
                   {diagnostic && (
-                    <small className="character-diagnostic">{diagnostic}</small>
+                    <small className="character-diagnostic" title={diagnostic}>
+                      {diagnostic.startsWith("Loading")
+                        ? "Loading character…"
+                        : agent.avatarId === "unassigned"
+                          ? "No character assigned"
+                          : "Character unavailable"}
+                    </small>
                   )}
                 </span>
               </button>
@@ -289,9 +296,11 @@ export function OfficeScene({
           <button onClick={() => camera("reset")}>Reset view</button>
         </nav>
         <span>
-          {occupants.some((o) => o.asset)
-            ? "Saved character assignments · standing pose"
-            : "Character placeholders shown"}
+          {selectedCharacter?.diagnostic
+            ? `${selectedCharacter.agent.name}: ${selectedCharacter.diagnostic}`
+            : occupants.some((o) => o.asset)
+              ? "Saved character assignments · standing pose"
+              : "Character placeholders shown"}
         </span>
       </div>
       <div className="room-attention" aria-label="Room attention">
