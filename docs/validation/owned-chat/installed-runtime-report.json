@@ -1,6 +1,7 @@
 {
   "passed": true,
   "checks": [
+    "source allowlist excludes live office data, git and environment files",
     "production profile provision, canonical lease, handshake and session binding",
     "real Hermes public stream, clarify answer and same-turn completion",
     "real Hermes approval frame, denied reply and resolution",

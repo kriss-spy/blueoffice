@@ -20,6 +20,7 @@ export interface Receipt {
 }
 export interface ChatItem {
   id: string;
+  epoch: string;
   turnId: string;
   role: "user" | "assistant" | "tool";
   text: string;
@@ -49,6 +50,13 @@ export interface PendingRequest {
   reason?: string;
   at: string;
 }
+export interface Conversation {
+  epoch: string;
+  liveSessionId: string;
+  storedSessionId: string;
+  storedSessionIds: string[];
+  createdAt: string;
+}
 export interface OfficeAgent {
   id: string;
   name: string;
@@ -65,6 +73,7 @@ export interface OfficeAgent {
   storedSessionId: string | null;
   turnId: string | null;
   busy: boolean;
+  conversations: Conversation[];
   messages: ChatItem[];
   requests: PendingRequest[];
   receipts: Receipt[];

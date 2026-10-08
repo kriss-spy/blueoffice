@@ -1,7 +1,7 @@
 /** Invoked only by python3 scripts/hermes_probe.py --suite office inside bubblewrap. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { HermesRuntime, type Installation } from "../server/runtime.js";
 import { OfficeStore } from "../server/store.js";
@@ -25,6 +25,12 @@ const until = async (predicate: () => boolean) => {
   }
 };
 try {
+  await assert.rejects(access("/office/.blueoffice"));
+  await assert.rejects(access("/office/.git"));
+  await assert.rejects(access("/office/.env"));
+  checks.push(
+    "source allowlist excludes live office data, git and environment files",
+  );
   const created = await office.create(
     "Installed Hermes integration",
     "/tmp/alpha/workspace",

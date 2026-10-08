@@ -7,6 +7,7 @@ import signal
 import sys
 import threading
 import time
+import uuid
 
 profile, scenario = Path(sys.argv[1]), sys.argv[2]
 lease = open(profile / ".fixture-lease", "w")
@@ -18,9 +19,11 @@ if scenario == "startup-failure":
     raise SystemExit(2)
 if scenario == "ignore-stop":
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+if scenario == "abnormal-stop":
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(17))
 if scenario == "never-ready":
     time.sleep(60)
-session = "live-fixture"
+session = "live-fixture-" + uuid.uuid4().hex[:8]
 seq = 0
 busy = False
 requests = {}
@@ -61,6 +64,16 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
+    if "long output" in lower:
+        event("message.delta", {"text": "I will inspect the workspace."})
+        event("message.interim", {"text": "I will inspect the workspace.", "already_streamed": True})
+        event("message.interim", {"text": "The inspection is complete.", "already_streamed": False})
+        answer = "A" * 40000 + "FINAL_TAIL"
+        event("message.delta", {"text": answer})
+        event("message.complete", {"text": answer, "status": "complete"})
+        busy = False
+        event("session.info", {"running": False})
+        return
     if "exit" in lower:
         os._exit(9)
     if "slow" in lower:
@@ -97,7 +110,7 @@ for line in sys.stdin:
         continue
     result = {}
     if method == "session.create":
-        result = {"session_id": session, "stored_session_id": "stored-fixture"}
+        result = {"session_id": session, "stored_session_id": "stored-" + session}
     elif method == "session.activate":
         result = {"running": busy, "open_requests": list(requests.values())}
         time.sleep(0.05)  # Response can arrive after a newer settled session.info.

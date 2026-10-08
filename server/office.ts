@@ -33,12 +33,28 @@ export class Office extends EventEmitter {
   private agents = new Map<string, OfficeAgent>();
   private runtimes = new Map<string, RpcChild>();
   private closing = false;
+  private startups = new Set<Promise<void>>();
   constructor(
     private store: OfficeStore,
     readonly factory: RuntimeFactory,
   ) {
     super();
     for (const agent of store.agents()) {
+      // Upgrade snapshots from the initial DOM prototype without discarding their known binding.
+      agent.conversations ??=
+        agent.epoch && agent.liveSessionId && agent.storedSessionId
+          ? [
+              {
+                epoch: agent.epoch,
+                liveSessionId: agent.liveSessionId,
+                storedSessionId: agent.storedSessionId,
+                storedSessionIds: [agent.storedSessionId],
+                createdAt: agent.createdAt,
+              },
+            ]
+          : [];
+      for (const message of agent.messages)
+        message.epoch ??= agent.epoch ?? "legacy";
       this.agents.set(agent.id, agent);
       if (agent.lifecycle !== "stopped" && agent.lifecycle !== "failed") {
         agent.lifecycle = "unknown";
@@ -104,6 +120,7 @@ export class Office extends EventEmitter {
       storedSessionId: null,
       turnId: null,
       busy: false,
+      conversations: [],
       messages: [],
       requests: [],
       receipts: [],
@@ -130,6 +147,15 @@ export class Office extends EventEmitter {
     return rpc;
   }
   async start(id: string) {
+    const startup = this.startRuntime(id);
+    this.startups.add(startup);
+    try {
+      await startup;
+    } finally {
+      this.startups.delete(startup);
+    }
+  }
+  private async startRuntime(id: string) {
     const agent = this.get(id);
     if (this.closing) throw new OfficeError("Office is shutting down.");
     if (
@@ -200,6 +226,13 @@ export class Office extends EventEmitter {
         );
       agent.liveSessionId = session.session_id;
       agent.storedSessionId = session.stored_session_id;
+      agent.conversations.push({
+        epoch: agent.epoch!,
+        liveSessionId: session.session_id,
+        storedSessionId: session.stored_session_id,
+        storedSessionIds: [session.stored_session_id],
+        createdAt: now(),
+      });
       agent.lifecycle = "ready";
       agent.work = "idle";
       agent.freshness = "current";
@@ -276,6 +309,7 @@ export class Office extends EventEmitter {
     agent.error = null;
     agent.messages.push({
       id: commandId,
+      epoch: agent.epoch!,
       turnId: agent.turnId,
       role: "user",
       text: prompt,
@@ -362,7 +396,11 @@ export class Office extends EventEmitter {
       agent.work = "unknown";
     agent.error = result.forced
       ? "The runtime needed a forced stop after its grace period. The last task may be incomplete."
-      : null;
+      : result.code !== null && result.code !== 0
+        ? `Runtime stopped after an abnormal exit (code ${result.code}). The last task may be incomplete.`
+        : result.signal && !["SIGTERM", "SIGINT"].includes(result.signal)
+          ? `Runtime stopped after ${result.signal}. The last task may be incomplete.`
+          : null;
     for (const pending of attention(agent)) {
       pending.state = "lost";
       pending.reason = "Runtime stopped.";
@@ -474,12 +512,18 @@ export class Office extends EventEmitter {
         request.state = "resolved";
     this.changed(agent, "requests.reconciled");
   }
-  private assistant(agent: OfficeAgent): ChatItem {
-    const id = `assistant:${agent.turnId}`;
-    let message = agent.messages.find((m) => m.id === id);
+  private assistant(agent: OfficeAgent, forceNew = false): ChatItem {
+    const segments = agent.messages.filter(
+      (m) => m.turnId === agent.turnId && m.role === "assistant",
+    );
+    const id = `assistant:${agent.turnId}:${segments.length}`;
+    let message = forceNew
+      ? undefined
+      : segments.find((m) => m.state === "streaming");
     if (!message) {
       message = {
         id,
+        epoch: agent.epoch!,
         turnId: agent.turnId!,
         role: "assistant",
         text: "",
@@ -544,14 +588,36 @@ export class Office extends EventEmitter {
     switch (type) {
       case "session.info":
         if (typeof payload.running === "boolean") agent.busy = payload.running;
-        if (typeof payload.stored_session_id === "string")
+        if (typeof payload.stored_session_id === "string") {
           agent.storedSessionId = payload.stored_session_id;
+          const conversation = agent.conversations.find(
+            (c) => c.epoch === agent.epoch,
+          );
+          if (conversation) {
+            conversation.storedSessionId = payload.stored_session_id;
+            if (
+              !conversation.storedSessionIds.includes(payload.stored_session_id)
+            )
+              conversation.storedSessionIds.push(payload.stored_session_id);
+          }
+        }
         break;
       case "message.delta":
         if (!agent.turnId) return;
-        this.assistant(agent).text += text(payload.text);
+        this.assistant(agent).text += text(payload.text, Infinity);
         this.assistant(agent).chunkIds.push(key);
         break;
+      case "message.interim": {
+        if (!agent.turnId) return;
+        const message = this.assistant(
+          agent,
+          payload.already_streamed === false,
+        );
+        message.text = text(payload.text, Infinity) || message.text;
+        message.state = "complete";
+        message.chunkIds.push(key);
+        break;
+      }
       case "message.complete": {
         if (!agent.turnId) return;
         const outcome =
@@ -564,7 +630,8 @@ export class Office extends EventEmitter {
                 : "unknown";
         agent.work = outcome;
         const message = this.assistant(agent);
-        message.text = text(payload.text);
+        message.text = text(payload.text, Infinity) || message.text;
+        message.chunkIds.push(key);
         message.state = outcome === "completed" ? "complete" : outcome;
         for (const tool of agent.messages.filter(
           (m) =>
@@ -611,6 +678,7 @@ export class Office extends EventEmitter {
         if (!agent.messages.some((m) => m.id === id))
           agent.messages.push({
             id,
+            epoch: agent.epoch!,
             turnId: agent.turnId,
             role: "tool",
             toolName: text(payload.name, 100),
@@ -663,5 +731,8 @@ export class Office extends EventEmitter {
     await Promise.allSettled(
       [...this.runtimes.keys()].map((id) => this.stop(id)),
     );
+    // Discovery/profile verification can still be awaiting IO before a child exists.
+    // Keep the store alive until those starts observe closing and record their outcome.
+    await Promise.allSettled([...this.startups]);
   }
 }

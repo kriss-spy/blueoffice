@@ -84,7 +84,10 @@ def main():
         if not node:
             parser.error("Node.js is required for the office integration probe")
         node_root = str(Path(node).resolve().parents[1])
-        command += ["--ro-bind", node_root, node_root, "--ro-bind", str(project), "/office", "--setenv", "BLUEOFFICE_NODE", node]
+        command += ["--ro-bind", node_root, node_root, "--dir", "/office", "--setenv", "BLUEOFFICE_NODE", node]
+        # Never expose the checkout wholesale: it may contain live .blueoffice data or credentials.
+        for entry in ("server", "shared", "scripts", "tests", "node_modules", "package.json", "tsconfig.json"):
+            command += ["--ro-bind", str(project / entry), f"/office/{entry}"]
     inner = "probe_contract.py" if args.suite == "protocol" else "probe_office.py"
     command += ["--ro-bind", str(project / "scripts"), "/probe", "--bind", str(output), "/evidence",
                 "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "LANG", "C.UTF-8",

@@ -102,35 +102,62 @@ export function Chat({
             </p>
           </div>
         ) : null}
-        {agent.messages.map((message) => (
-          <article
-            className={`message ${message.role}`}
-            key={message.id}
-            aria-label={`${message.role} message`}
+        {agent.conversations.map((conversation) => (
+          <section
+            key={conversation.epoch}
+            className="conversation-group"
+            aria-label={
+              conversation.epoch === agent.epoch
+                ? "Current conversation"
+                : "Earlier conversation"
+            }
           >
-            <div className="message-label">
-              {message.role === "user"
-                ? "You"
-                : message.role === "tool"
-                  ? "Tool activity"
-                  : agent.name}
-              <time dateTime={message.at}>
-                {new Date(message.at).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </time>
-            </div>
-            <p>
-              {message.text ||
-                (message.state === "streaming" ? "Working…" : "")}
+            <p className="conversation-boundary">
+              {conversation.epoch === agent.epoch
+                ? "Current conversation"
+                : "Earlier conversation"}{" "}
+              · {new Date(conversation.createdAt).toLocaleString()}
             </p>
-            {["pending", "failed", "unknown", "interrupted"].includes(
-              message.state,
-            ) ? (
-              <small>{message.state}</small>
+            {conversation.epoch === agent.epoch &&
+            !agent.messages.some((m) => m.epoch === conversation.epoch) ? (
+              <p className="conversation-note">
+                A new conversation is ready. Earlier messages are kept here for
+                reference and are not included in this task’s context.
+              </p>
             ) : null}
-          </article>
+            {agent.messages
+              .filter((m) => m.epoch === conversation.epoch)
+              .map((message) => (
+                <article
+                  className={`message ${message.role}`}
+                  key={message.id}
+                  aria-label={`${message.role} message`}
+                >
+                  <div className="message-label">
+                    {message.role === "user"
+                      ? "You"
+                      : message.role === "tool"
+                        ? "Tool activity"
+                        : agent.name}
+                    <time dateTime={message.at}>
+                      {new Date(message.at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </time>
+                  </div>
+                  <p>
+                    {message.text ||
+                      (message.state === "streaming" ? "Working…" : "")}
+                  </p>
+                  {["pending", "failed", "unknown", "interrupted"].includes(
+                    message.state,
+                  ) ? (
+                    <small>{message.state}</small>
+                  ) : null}
+                </article>
+              ))}
+          </section>
         ))}
         {pending.map((request) => (
           <RequestCard

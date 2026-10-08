@@ -212,8 +212,8 @@ export class RpcChild extends EventEmitter {
       JSON.stringify({ jsonrpc: "2.0", id, result }) + "\n",
     );
   }
-  async stop(grace = 5_000): Promise<{ forced: boolean }> {
-    if (this.exitObserved) return { forced: false };
+  async stop(grace = 5_000) {
+    if (this.exitObserved) return { forced: false, ...(await this.exited) };
     this.child.kill("SIGTERM");
     let timer: NodeJS.Timeout | undefined;
     const exited = await Promise.race([
@@ -240,6 +240,6 @@ export class RpcChild extends EventEmitter {
       } else this.child.kill("SIGKILL");
       await this.exited;
     }
-    return { forced: !exited };
+    return { forced: !exited, ...(await this.exited) };
   }
 }

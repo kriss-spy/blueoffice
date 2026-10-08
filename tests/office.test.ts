@@ -87,6 +87,7 @@ test("owned runtime streams public work, admits one task and persists stable ide
     .map((line) => JSON.parse(line));
   assert.equal(log.filter((f) => f.method === "prompt.submit").length, 1);
   const epoch = current().epoch;
+  const firstStoredSession = current().storedSessionId;
   await office.stop(agent.id);
   assert.equal(current().lifecycle, "stopped");
   await office.start(agent.id);
@@ -94,6 +95,10 @@ test("owned runtime streams public work, admits one task and persists stable ide
   assert.equal(current().name, "Hoshino");
   assert.equal(current().profileHome, agent.profileHome);
   assert.equal(current().avatarId, "unassigned");
+  assert.equal(current().conversations.length, 2);
+  assert.equal(current().conversations[0].storedSessionId, firstStoredSession);
+  assert.notEqual(current().storedSessionId, firstStoredSession);
+  assert.ok(current().messages.every((m) => m.epoch === epoch));
   const reader = new OfficeStore(join(directory, "office.db"));
   assert.equal(reader.agents()[0].id, agent.id);
   reader.close();
@@ -322,4 +327,54 @@ test("recovery marks unresolved work unknown and never signals or adopts a previ
   await recovered.start(agent.id);
   assert.equal(recovered.snapshot().agents[0].lifecycle, "ready");
   await recovered.shutdown();
+});
+
+test("shutdown waits for in-flight discovery before closing persisted state", async (t) => {
+  const { office, agent, current, factory } = await setup(t);
+  const launch = factory.launch.bind(factory);
+  let release!: () => void;
+  const discovery = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  factory.launch = async (agent) => {
+    await discovery;
+    return launch(agent);
+  };
+  const started = office.start(agent.id);
+  const failedStart = assert.rejects(started, /shutdown interrupted/);
+  let drained = false;
+  const shutdown = office.shutdown().then(() => {
+    drained = true;
+  });
+  await delay(20);
+  assert.equal(drained, false);
+  release();
+  await failedStart;
+  await shutdown;
+  assert.equal(current().lifecycle, "failed");
+});
+
+test("interim public segments and long final text remain intact after persistence", async (t) => {
+  const { office, agent, current, target, store } = await setup(t);
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "long output");
+  await until(() => current().work === "completed" && !current().busy);
+  const messages = store
+    .agents()[0]
+    .messages.filter((m) => m.role === "assistant");
+  assert.deepEqual(
+    messages.slice(0, 2).map((m) => m.text),
+    ["I will inspect the workspace.", "The inspection is complete."],
+  );
+  assert.equal(messages[2].text, "A".repeat(40000) + "FINAL_TAIL");
+  assert.equal(new Set(messages.map((m) => m.id)).size, 3);
+  assert.ok(messages.every((m) => m.chunkIds.length > 0));
+});
+
+test("a nonzero shutdown exit is visible even without forced termination", async (t) => {
+  const { office, agent, current } = await setup(t, "abnormal-stop");
+  await office.start(agent.id);
+  await office.stop(agent.id);
+  assert.equal(current().lifecycle, "stopped");
+  assert.match(current().error!, /abnormal exit \(code 17\)/);
 });

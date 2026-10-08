@@ -997,3 +997,15 @@ input {
     scroll-behavior: auto !important;
   }
 }
+
+.conversation-boundary {
+  border-top: 1px solid #dbe9f5;
+  padding-top: 16px;
+  color: #607c9c;
+  font-size: 11px;
+}
+.conversation-note {
+  color: #607c9c;
+  font-size: 12px;
+  line-height: 1.6;
+}

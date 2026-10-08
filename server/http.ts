@@ -256,10 +256,15 @@ export function officeServer(office: Office, assets = resolve("dist")) {
       office.off("change", broadcast);
       clearInterval(heartbeat);
       clearTimeout(timer);
+      const closed = new Promise<void>((resolve) =>
+        server.close(() => resolve()),
+      );
       await office.shutdown();
       for (const client of clients) client.end();
       clients.clear();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      // A client with an unfinished upload must not hold the supervisor open.
+      server.closeAllConnections();
+      await closed;
     },
   };
 }
