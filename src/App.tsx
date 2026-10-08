@@ -7,6 +7,7 @@ import { Chat } from "./Chat";
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     revision: 0,
+    routes: [],
     agents: [],
     mode: "live",
   });
@@ -58,6 +59,7 @@ export function App() {
       const result = (await command("/api/agents", {
         name: data.get("name"),
         workspace: data.get("workspace"),
+        model: data.get("model"),
       })) as { id: string };
       select(result.id);
       dialog.current?.close();
@@ -219,6 +221,21 @@ export function App() {
                   <dd title={agent.workspace}>{agent.workspace}</dd>
                 </div>
                 <div>
+                  <dt>Model</dt>
+                  <dd>{agent.model}</dd>
+                </div>
+                <div>
+                  <dt>API family</dt>
+                  <dd>
+                    {snapshot.routes.find((r) => r.model === agent.model)
+                      ?.apiFamily ?? "Unverified"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Endpoint</dt>
+                  <dd>http://127.0.0.1:8317/v1</dd>
+                </div>
+                <div>
                   <dt>Character</dt>
                   <dd>
                     {agent.avatarId === "unassigned"
@@ -345,6 +362,36 @@ export function App() {
               maxLength={4096}
             />
           </label>
+          <label>
+            Model
+            <select
+              name="model"
+              defaultValue={
+                snapshot.routes.find((r) => r.status !== "unverified")?.model ??
+                ""
+              }
+              required
+            >
+              <option value="" disabled>
+                Select a verified route
+              </option>
+              {snapshot.routes.map((route) => (
+                <option
+                  key={route.model}
+                  value={route.model}
+                  disabled={route.status === "unverified"}
+                >
+                  {route.model} · {route.apiFamily} · {route.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          {snapshot.routes.some((r) => r.status === "unverified") ? (
+            <p className="form-note">
+              Unverified routes are disabled. Run npm run verify:routes --
+              --live in the server project, then refresh to load the results.
+            </p>
+          ) : null}
           <p className="form-note">
             Choose an existing folder. Character and workstation assignments
             will follow in the room editor.

@@ -12,7 +12,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "test:protocol": "python3 -m unittest discover -s tests -v"
+    "test:protocol": "python3 -m unittest discover -s tests -v",
+    "verify:routes": "python3 scripts/verify_routes.py"
   },
   "dependencies": {
     "react": "19.3.0",

@@ -1,3 +1,4 @@
+import { MODEL_IDS } from "../shared/routes.js";
 import {
   createServer,
   type IncomingMessage,
@@ -15,6 +16,7 @@ const target = z
 const commandId = z.uuid();
 const createInput = z
   .object({
+    model: z.enum(MODEL_IDS).default("glm-5.3-flash"),
     name: z.string().trim().min(1).max(60),
     workspace: z.string().min(1).max(4096),
   })
@@ -166,7 +168,11 @@ export function officeServer(office: Office, assets = resolve("dist")) {
         }
         if (url.pathname === "/api/agents" && req.method === "POST") {
           const input = createInput.parse(await body(req));
-          send(res, 201, await office.create(input.name, input.workspace));
+          send(
+            res,
+            201,
+            await office.create(input.name, input.workspace, input.model),
+          );
           return;
         }
         const route =

@@ -1,3 +1,5 @@
+import { turnFailure } from "./failures.js";
+import type { ModelId } from "../shared/routes.js";
 import { randomUUID, createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type {
@@ -40,6 +42,7 @@ export class Office extends EventEmitter {
   ) {
     super();
     for (const agent of store.agents()) {
+      agent.model ??= "glm-5.3-flash";
       // Upgrade snapshots from the initial DOM prototype without discarding their known binding.
       agent.conversations ??=
         agent.epoch && agent.liveSessionId && agent.storedSessionId
@@ -82,6 +85,7 @@ export class Office extends EventEmitter {
       revision: this.store.revision(),
       agents: structuredClone([...this.agents.values()]),
       mode: this.factory.mode,
+      routes: this.factory.routes(),
     };
   }
   private get(id: string) {
@@ -97,17 +101,22 @@ export class Office extends EventEmitter {
     this.store.save(agent, kind, eventKey);
     this.emit("change");
   }
-  async create(name: string, workspace: string) {
+  async create(
+    name: string,
+    workspace: string,
+    model: ModelId = "glm-5.3-flash",
+  ) {
     if (this.closing) throw new OfficeError("Office is shutting down.");
     if (this.agents.size >= 8)
       throw new OfficeError(
         "This beta supports up to eight configured agents.",
       );
     const id = randomUUID();
-    const profile = await this.factory.prepare(id, workspace);
+    const profile = await this.factory.prepare(id, workspace, model);
     const agent: OfficeAgent = {
       id,
       name,
+      model,
       workspace,
       ...profile,
       avatarId: "unassigned",
@@ -307,6 +316,7 @@ export class Office extends EventEmitter {
     agent.work = "working";
     agent.turnId = randomUUID();
     agent.error = null;
+    agent.failureKind = null;
     agent.messages.push({
       id: commandId,
       epoch: agent.epoch!,
@@ -645,12 +655,13 @@ export class Office extends EventEmitter {
               ? `${tool.toolName} interrupted`
               : `${tool.toolName} outcome unavailable`;
         }
-        if (outcome === "failed")
-          agent.error = /usage_limit_reached|quota/i.test(
-            text(payload.error) + text(payload.text),
-          )
-            ? "Provider quota was reached. No automatic retry will be made."
-            : "Hermes reported a task failure. Inspect the public response before retrying.";
+        if (outcome === "failed") {
+          const failure = turnFailure(payload);
+          agent.error = failure.message;
+          agent.failureKind = failure.kind;
+          // Provider error bodies can contain credentials; publish only classified copy.
+          message.text = failure.message;
+        }
         // Completion can precede native foreground release. Re-read the authoritative snapshot.
         const completedTurn = agent.turnId;
         void rpc

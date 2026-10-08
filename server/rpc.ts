@@ -106,6 +106,11 @@ export class RpcChild extends EventEmitter {
         new RpcFailure("The owned runtime command channel closed.", true),
       ),
     );
+    const secret = launch.options.env?.BLUEOFFICE_PROXY_KEY;
+    const redact = (_key: string, value: unknown) =>
+      typeof value === "string" && secret
+        ? value.replaceAll(secret, "[redacted]")
+        : value;
     let buffer = "";
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => {
@@ -123,7 +128,7 @@ export class RpcChild extends EventEmitter {
         buffer = buffer.slice(newline + 1);
         if (!line.trim()) continue;
         try {
-          const frame = JSON.parse(line) as Frame;
+          const frame = JSON.parse(line, redact) as Frame;
           if (!frame || frame.jsonrpc !== "2.0" || typeof frame !== "object")
             throw new Error();
           if (

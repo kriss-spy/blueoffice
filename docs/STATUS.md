@@ -7,7 +7,7 @@ Goal: solve all 21 GitHub tickets, including the P1 tickets. Source of scope: [P
 | #1 Hermes RPC contract | Isolated installed-runtime harness, synthetic wire fixtures and [capability report](validation/hermes-contract.md). Reviewed and published in [PR #22](https://github.com/kriss-spy/blueoffice/pull/22). Awaiting merge. |
 | #2 Avatar/workstation proof | Not implemented. Intended-character permissions and seated-work visual gate remain required. |
 | #3 Owned runtime/chat | Implemented React DOM roster/chat, owned process supervision, durable identities and command receipts, loopback protection, and safe restart. [Verification](validation/owned-chat.md) covers actual installed Hermes and independent fixture/browser tests. Reviewed and published in [PR #23](https://github.com/kriss-spy/blueoffice/pull/23), stacked on #22. Awaiting merge. |
-| #4 Model routing | Not implemented. GLM Chat Completions and Muse Responses via CLIProxyAPI both remain required. |
+| #4 Model routing | Implemented named native providers, proof-gated model selection, effective-route validation, and classified failures. [Live and synthetic evidence](validation/model-routing.md) passes both API families, tools, auxiliary and delegated-child calls. Review/publication pending. |
 | #5 Profile configuration | Native operations probed in #1; application settings/conflict handling not implemented. |
 | #6 Clarification / #7 Approval | Basic browser cards and exact response registry implemented. Full multiselect, partial batch locks, expiry/replay matrix, and permission persistence remain open. |
 | #8 Recovery | Durable office snapshots/receipt registry and browser SSE reconnect implemented. Full normalized event journal, replay-gap reconciliation, and resume recovery remain open. |

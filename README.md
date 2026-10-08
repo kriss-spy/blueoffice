@@ -9,12 +9,15 @@ Requires Linux, Python 3, Node.js 22.13+ (tested with 22.17.1), and the supporte
 ```sh
 npm ci
 npm run build
+npm run verify:routes -- --live
 npm start
 ```
 
 Open the loopback URL printed by the server (default `http://127.0.0.1:4310`). Add an assistant with an existing absolute workspace directory, start it, and send a task. `BLUEOFFICE_PORT` changes the port; `BLUEOFFICE_DATA` changes the office data directory (default `.blueoffice`). Always start through `npm start` so the server holds its exclusive data lease.
 
-Live mode creates a dedicated native Hermes profile per agent. It reads `~/.cli-proxy-api/.api-key` server-side and routes `glm-5.3-flash` through `http://127.0.0.1:8317/v1`. It never edits CLIProxyAPI configuration. Closing the browser keeps agents running; Ctrl-C stops the server and its owned runtimes. Restarting after a crash marks prior activity unknown and never resends commands. A new start creates a new native conversation; explicit history resume is a later ticket.
+Live mode creates a dedicated native Hermes profile per agent. It reads `~/.cli-proxy-api/.api-key` server-side through named Hermes provider `key_env` configuration. Choose verified `glm-5.3-flash` (Chat Completions) or `muse-spark-1.3-contributor` (Responses), both through `http://127.0.0.1:8317/v1`. It never edits CLIProxyAPI configuration. Closing the browser keeps agents running; Ctrl-C stops the server and its owned runtimes. Restarting after a crash marks prior activity unknown and never resends commands. A new start creates a new native conversation; explicit history resume is a later ticket.
+
+Route verification runs synthetic failure tests first, then five deliberately small live calls per model (text, tool continuation, auxiliary, and delegated-child work). It stores local admission evidence in the selected office data directory. Without matching live evidence, model options stay disabled. See [routing evidence and limits](docs/validation/model-routing.md). `npm run verify:routes` without `--live` uses no real credentials or models and cannot admit a route.
 
 For an offline, visibly labeled demonstration with no model calls:
 
@@ -34,6 +37,6 @@ python3 scripts/hermes_probe.py
 python3 scripts/hermes_probe.py --suite office --output artifacts/office-runtime
 ```
 
-The installed-runtime probes require bubblewrap. They use disposable profiles and a synthetic provider inside a private network/process namespace, with no live model calls. See [owned runtime/chat evidence](docs/validation/owned-chat.md) and [native protocol evidence](docs/validation/hermes-contract.md). Full GLM/Muse route acceptance, advanced human-input handling, durable replay, visual gates, and release verification remain open.
+The installed-runtime probes require bubblewrap. They use disposable profiles and a synthetic provider inside a private network/process namespace, with no live model calls. See [owned runtime/chat evidence](docs/validation/owned-chat.md) and [native protocol evidence](docs/validation/hermes-contract.md). Advanced human-input handling, durable replay, visual gates, and release verification remain open.
 
 Start with the [planning-pack index](docs/README.md), [PRD](docs/PRD.md), and [implementation plan](docs/IMPLEMENTATION-PLAN.md). Original references: [RESOURCES.md](RESOURCES.md). The [Blue Archive capture](capture/blue-archive/START-HERE.md) contains design research and an isolated study specimen.
