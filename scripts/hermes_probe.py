@@ -30,21 +30,22 @@ def discover(launcher):
     # PM's read-only selection helper is stdlib-only, unlike importing the gateway.
     code = ("import sys,json; from pathlib import Path; "
             f"sys.path.insert(0,{str(source)!r}); "
-            "from pm.environments import selected_venv; from hermes_constants import get_hermes_home; "
-            f"print(json.dumps({{'venv':str(selected_venv(Path({str(source)!r}))), 'profile_home':str(get_hermes_home())}}))")
+            "from pm.environments import selected_venv; from hermes_constants import get_hermes_home,get_default_hermes_root; "
+            f"print(json.dumps({{'venv':str(selected_venv(Path({str(source)!r}))), 'profile_home':str(get_hermes_home()), 'profile_root':str(get_default_hermes_root())}}))")
     context = json.loads(subprocess.check_output([str(runtime), "-I", "-c", code], text=True))
     venv = Path(context["venv"])
     python = venv / "bin/python"
     if not python.exists() or python.resolve() != runtime:
         raise RuntimeError("Selected dependency environment does not match trusted Hermes interpreter")
     return {"source": str(source), "runtime": str(runtime), "venv": str(venv),
-            "python": str(python), "revision": revision, "profile_home": context["profile_home"]}
+            "python": str(python), "revision": revision, "profile_home": context["profile_home"], "profile_root": context["profile_root"]}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", default=shutil.which("hermes"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/hermes-contract"))
+    parser.add_argument("--suite", choices=("protocol", "office"), default="protocol")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -78,10 +79,17 @@ def main():
     for label in ("alpha", "beta"):
         relative = Path(installation["venv"]).relative_to(Path(installation["venv"]).parents[4])
         command += ["--ro-bind", installation["venv"], str(Path("/tmp") / label / relative)]
+    if args.suite == "office":
+        node = shutil.which("node")
+        if not node:
+            parser.error("Node.js is required for the office integration probe")
+        node_root = str(Path(node).resolve().parents[1])
+        command += ["--ro-bind", node_root, node_root, "--ro-bind", str(project), "/office", "--setenv", "BLUEOFFICE_NODE", node]
+    inner = "probe_contract.py" if args.suite == "protocol" else "probe_office.py"
     command += ["--ro-bind", str(project / "scripts"), "/probe", "--bind", str(output), "/evidence",
                 "--setenv", "PATH", "/usr/bin:/bin", "--setenv", "LANG", "C.UTF-8",
                 "--setenv", "HERMES_DISABLE_LAZY_INSTALLS", "1", "--chdir", "/tmp",
-                installation["python"], "-B", "/probe/probe_contract.py", json.dumps(installation), json.dumps(fingerprints)]
+                installation["python"], "-B", f"/probe/{inner}", json.dumps(installation), json.dumps(fingerprints)]
     try:
         result = subprocess.run(command, timeout=240)
     except (subprocess.TimeoutExpired, OSError) as exc:
