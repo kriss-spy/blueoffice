@@ -1,19 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { attention, presentAgent, type OfficeAgent } from "../shared/office";
+import { layoutInventory, type LayoutPlacement } from "../shared/layout";
 import "./office-overview.css";
 
-export interface InventoryPlacement {
-  id: string;
-  kind: string;
-  position: [number, number, number];
-  rotation: number;
-  components: {
-    desk: boolean;
-    chair: boolean;
-    computer: boolean;
-    keyboard: boolean;
-  };
-}
 export function OfficeOverview({
   agents,
   placements,
@@ -26,7 +15,7 @@ export function OfficeOverview({
   close,
 }: {
   agents: OfficeAgent[];
-  placements: InventoryPlacement[];
+  placements: LayoutPlacement[];
   connected: boolean;
   select: (id: string) => void;
   locate: (deskId: string) => void;
@@ -77,14 +66,10 @@ export function OfficeOverview({
     select(id);
     close();
   };
-  const componentCounts = Object.fromEntries(
-    ["desk", "chair", "computer", "keyboard"].map((key) => [
-      key,
-      placements.filter(
-        (p) => p.components[key as keyof InventoryPlacement["components"]],
-      ).length,
-    ]),
-  );
+  const componentCounts = layoutInventory({
+    placements,
+    assignments: {},
+  }).components;
   return (
     <dialog
       ref={dialog}
