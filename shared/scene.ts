@@ -29,12 +29,13 @@ export const workstation = {
     monitor: [0, 0.94, -0.2] as Point,
     keyboard: [0, 0.65, 0.38] as Point,
     chair: [0, 0, 0.72] as Point,
-    seat: [0, 0.28, 0.72] as Point,
+    seat: [0, 0.263, 0.72] as Point,
     standing: [1.02, 0, 0.72] as Point,
     approach: [0, 0, 1.65] as Point,
     work: [0, 0.65, 0.38] as Point,
   },
-  compatibility: { standing: true, seated: false },
+  compatibility: { standing: true, seated: true },
+  seatingTags: ["blueoffice.seated-work.v1"],
 } as const;
 
 export function worldAnchor(

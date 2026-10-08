@@ -8,6 +8,7 @@ import {
   type CompletionCues,
 } from "../../shared/presentation";
 import { workstation, worldAnchor, type Point } from "../../shared/scene";
+import { seatedPlacement } from "../../shared/seating";
 import { assetKey } from "../../shared/assets";
 import { useCharacters } from "./characters";
 import { CharacterLibrary } from "./CharacterLibrary";
@@ -155,7 +156,7 @@ export function OfficeScene({
     const desk = visibleLayout.placements.find(
       (desk) => desk.id === assignedId && completeWorkstation(desk),
     );
-    const position: Point = desk
+    const standingPosition: Point = desk
       ? worldAnchor(workstation.anchors.standing, desk.position, desk.rotation)
       : safeStandingPosition(
           agents
@@ -170,11 +171,35 @@ export function OfficeScene({
             ).length,
         );
     const entry = agent.avatar ? loaded[assetKey(agent.avatar)] : undefined;
+    const view = presentAgent(agent, connected);
+    const seating = desk
+      ? {
+          seat: workstation.anchors.seat,
+          keyboard: workstation.anchors.keyboard,
+          compatibility: workstation.seatingTags,
+        }
+      : undefined;
+    const placement = seatedPlacement(
+      entry?.asset?.clips?.seated &&
+        entry.asset.gltf.animations.some(
+          (c) => c.name === entry.asset?.clips?.seated,
+        )
+        ? entry.asset.seating
+        : undefined,
+      seating,
+    );
+    const seated = view.tone === "working" && placement.compatible;
     return {
       agent,
       desk,
-      position,
-      view: presentAgent(agent, connected),
+      position: seated && desk ? desk.position : standingPosition,
+      seating,
+      seated,
+      poseDiagnostic:
+        view.tone === "working" && entry?.asset && !placement.compatible
+          ? placement.diagnostic
+          : "",
+      view,
       asset: entry?.asset,
       diagnostic:
         entry?.error ??
@@ -198,14 +223,11 @@ export function OfficeScene({
     if (!desk) return;
     setSelectedDesk(id);
     // The camera owns the elevated view and pan/zoom; Locate requests its target.
-    setCommand(
-      (c) =>
-        ({
-          action: "locate",
-          target: desk.position,
-          id: c.id + 1,
-        }) as unknown as CameraCommand,
-    );
+    setCommand((c) => ({
+      action: "locate",
+      target: desk.position,
+      id: c.id + 1,
+    }));
   };
   useEffect(() => {
     if (!locate || lastLocate.current === locate.token) return;
@@ -215,14 +237,11 @@ export function OfficeScene({
     if (desk) {
       lastLocate.current = locate.token;
       setSelectedDesk(desk.id);
-      setCommand(
-        (c) =>
-          ({
-            action: "locate",
-            target: desk.position,
-            id: c.id + 1,
-          }) as unknown as CameraCommand,
-      );
+      setCommand((c) => ({
+        action: "locate",
+        target: desk.position,
+        id: c.id + 1,
+      }));
     }
   }, [locate, savedLayout]);
   return (
@@ -291,41 +310,49 @@ export function OfficeScene({
                 }}
               />
             ))}
-            {occupants.map(({ agent, position, desk, view, asset }) =>
-              asset ? (
-                <Avatar
-                  key={agent.id}
-                  asset={asset}
-                  id={agent.id}
-                  position={position}
-                  rotation={desk?.rotation ?? 0}
-                  motion={isCueActive(agent.id, view) ? "react" : "idle"}
-                  playing={!reducedMotion && !view.pauseMotion}
-                  time={0}
-                  metrics={liveMetrics}
-                  onSelect={() => select(agent.id)}
-                />
-              ) : (
-                <group
-                  key={agent.id}
-                  position={position}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    select(agent.id);
-                  }}
-                >
-                  <mesh position={[0, 0.44, 0]} castShadow>
-                    <cylinderGeometry args={[0.22, 0.3, 0.75, 12]} />
-                    <meshStandardMaterial
-                      color={agent.id === selected ? "#73b8d5" : "#acbfcc"}
-                    />
-                  </mesh>
-                  <mesh position={[0, 1.03, 0]} castShadow>
-                    <sphereGeometry args={[0.24, 16, 12]} />
-                    <meshStandardMaterial color="#edf5f8" />
-                  </mesh>
-                </group>
-              ),
+            {occupants.map(
+              ({ agent, position, desk, view, asset, seated, seating }) =>
+                asset ? (
+                  <Avatar
+                    key={agent.id}
+                    asset={asset}
+                    id={agent.id}
+                    position={position}
+                    rotation={desk?.rotation ?? 0}
+                    motion={
+                      seated
+                        ? "seated"
+                        : isCueActive(agent.id, view)
+                          ? "react"
+                          : "idle"
+                    }
+                    seating={seating}
+                    playing={!reducedMotion && !view.pauseMotion}
+                    time={0}
+                    metrics={liveMetrics}
+                    onSelect={() => select(agent.id)}
+                  />
+                ) : (
+                  <group
+                    key={agent.id}
+                    position={position}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      select(agent.id);
+                    }}
+                  >
+                    <mesh position={[0, 0.44, 0]} castShadow>
+                      <cylinderGeometry args={[0.22, 0.3, 0.75, 12]} />
+                      <meshStandardMaterial
+                        color={agent.id === selected ? "#73b8d5" : "#acbfcc"}
+                      />
+                    </mesh>
+                    <mesh position={[0, 1.03, 0]} castShadow>
+                      <sphereGeometry args={[0.24, 16, 12]} />
+                      <meshStandardMaterial color="#edf5f8" />
+                    </mesh>
+                  </group>
+                ),
             )}
             <Labels
               markers={markers}
@@ -345,40 +372,48 @@ export function OfficeScene({
           </Canvas>
         </SceneBoundary>
         <div className="scene-markers">
-          {occupants.map(({ agent, view, desk, diagnostic }, i) => (
-            <div key={agent.id}>
-              <button
-                ref={(el) => {
-                  markers.current[i] = el;
-                }}
-                data-scene-agent={agent.id}
-                className={`scene-marker live-marker ${selected === agent.id ? "selected" : ""} tone-${view.tone}`}
-                aria-label={`Select ${agent.name}: ${view.label}`}
-                onClick={() =>
-                  view.requests.length
-                    ? focusRequest(agent.id, view.requests[0].id)
-                    : select(agent.id)
-                }
-              >
-                <b aria-hidden="true">{symbols[view.tone]}</b>
-                <span>
-                  <strong>{agent.name}</strong>
-                  <small>{view.label}</small>
-                  {view.detail && <small>{view.detail}</small>}
-                  {!desk && <small>Unassigned · safe standing</small>}
-                  {diagnostic && (
-                    <small className="character-diagnostic" title={diagnostic}>
-                      {diagnostic.startsWith("Loading")
-                        ? "Loading character…"
-                        : agent.avatarId === "unassigned"
-                          ? "No character assigned"
-                          : "Character unavailable"}
-                    </small>
-                  )}
-                </span>
-              </button>
-            </div>
-          ))}
+          {occupants.map(
+            ({ agent, view, desk, diagnostic, poseDiagnostic }, i) => (
+              <div key={agent.id}>
+                <button
+                  ref={(el) => {
+                    markers.current[i] = el;
+                  }}
+                  data-scene-agent={agent.id}
+                  className={`scene-marker live-marker ${selected === agent.id ? "selected" : ""} tone-${view.tone}`}
+                  aria-label={`Select ${agent.name}: ${view.label}`}
+                  onClick={() =>
+                    view.requests.length
+                      ? focusRequest(agent.id, view.requests[0].id)
+                      : select(agent.id)
+                  }
+                >
+                  <b aria-hidden="true">{symbols[view.tone]}</b>
+                  <span>
+                    <strong>{agent.name}</strong>
+                    <small>{view.label}</small>
+                    {view.detail && <small>{view.detail}</small>}
+                    {!desk && <small>Unassigned · safe standing</small>}
+                    {poseDiagnostic && (
+                      <small title={poseDiagnostic}>Standing fallback</small>
+                    )}
+                    {diagnostic && (
+                      <small
+                        className="character-diagnostic"
+                        title={diagnostic}
+                      >
+                        {diagnostic.startsWith("Loading")
+                          ? "Loading character…"
+                          : agent.avatarId === "unassigned"
+                            ? "No character assigned"
+                            : "Character unavailable"}
+                      </small>
+                    )}
+                  </span>
+                </button>
+              </div>
+            ),
+          )}
           <button
             ref={(el) => {
               markers.current[occupants.length] = el;
@@ -410,7 +445,9 @@ export function OfficeScene({
           {selectedCharacter?.diagnostic
             ? `${selectedCharacter.agent.name}: ${selectedCharacter.diagnostic}`
             : occupants.some((o) => o.asset)
-              ? "Saved character assignments · standing pose"
+              ? occupants.some((o) => o.seated)
+                ? "Compatible characters seated at work"
+                : "Saved character assignments · standing pose"
               : "Character placeholders shown"}
         </span>
       </div>
