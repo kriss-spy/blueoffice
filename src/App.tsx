@@ -10,6 +10,8 @@ import {
 import type { Snapshot } from "../shared/office";
 import { attention, presentAgent } from "../shared/office";
 import { command, connectOffice } from "./api";
+import { Activity } from "./Activity";
+import { OfficeOverview } from "./OfficeOverview";
 import { Chat } from "./Chat";
 import { SettingsDialog } from "./SettingsDialog";
 
@@ -31,6 +33,13 @@ export function App() {
   );
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState("");
+  const [activity, setActivity] = useState(false);
+  const activityDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (activity) activityDialog.current?.showModal();
+  }, [activity]);
+  const [overview, setOverview] = useState(false);
+  const [locate, setLocate] = useState<{ deskId: string; token: number }>();
   const [creating, setCreating] = useState(false);
   const [adoptionPath, setAdoptionPath] = useState("");
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
@@ -133,6 +142,8 @@ export function App() {
           <span />
           {connected ? "Connected locally" : "Connecting…"}
         </div>
+        <button onClick={() => setOverview(true)}>Office overview</button>
+        <button onClick={() => setActivity(true)}>Activity</button>
         <span className="beta-label">Beta in progress</span>
       </header>
       {snapshot.mode === "fixture" ? (
@@ -270,6 +281,8 @@ export function App() {
           >
             <OfficeScene
               agents={agents}
+              layout={snapshot.layout}
+              locate={locate}
               connected={connected}
               selected={agent?.id}
               select={select}
@@ -346,6 +359,44 @@ export function App() {
           )}
         </div>
       </div>
+      {activity && (
+        <dialog
+          ref={activityDialog}
+          className="office-overview"
+          aria-label="Activity history"
+          onCancel={() => setActivity(false)}
+        >
+          <button
+            aria-label="Close Activity"
+            onClick={() => setActivity(false)}
+          >
+            Close
+          </button>
+          <Activity
+            agents={agents}
+            revision={snapshot.revision}
+            connected={connected}
+          />
+        </dialog>
+      )}
+      {overview && (
+        <OfficeOverview
+          agents={agents}
+          placements={snapshot.layout?.placements ?? []}
+          connected={connected}
+          select={select}
+          locate={(deskId) => setLocate({ deskId, token: Date.now() })}
+          configure={setSettingsFor}
+          act={async (id, action, body) => {
+            await command(`/api/agents/${id}/${action}`, body);
+          }}
+          focusRequest={(id, requestId) => {
+            select(id);
+            setFocusRequest({ id: requestId });
+          }}
+          close={() => setOverview(false)}
+        />
+      )}
       {settingsFor ? (
         <SettingsDialog
           key={settingsFor}

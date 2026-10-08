@@ -19,20 +19,20 @@ export function availableDesk(used: Iterable<string | null>) {
   return defaultDesks.find((desk) => !occupied.has(desk.id))?.id ?? null;
 }
 export const workstation = {
-  id: "blueoffice.workstation.v1",
+  id: "blueoffice.workstation.v2",
   unit: "meter",
   up: "Y",
   forward: "+Z",
   footprint: { width: 2.4, depth: 2.5, center: [0, 0, 0.38] as Point },
   anchors: {
-    desk: [0, 0.77, 0] as Point,
-    monitor: [0, 1.15, -0.2] as Point,
-    keyboard: [0, 0.83, 0.25] as Point,
-    chair: [0, 0, 0.9] as Point,
-    seat: [0, 0.48, 0.9] as Point,
+    desk: [0, 0.57, 0] as Point,
+    monitor: [0, 0.94, -0.2] as Point,
+    keyboard: [0, 0.65, 0.38] as Point,
+    chair: [0, 0, 0.72] as Point,
+    seat: [0, 0.28, 0.72] as Point,
     standing: [1.02, 0, 0.72] as Point,
     approach: [0, 0, 1.65] as Point,
-    work: [0, 0.83, 0.28] as Point,
+    work: [0, 0.65, 0.38] as Point,
   },
   compatibility: { standing: true, seated: false },
 } as const;

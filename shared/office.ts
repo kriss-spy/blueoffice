@@ -1,3 +1,4 @@
+import type { LayoutSnapshot } from "./layout.js";
 import type { AssetRef } from "./assets.js";
 import type { ApprovalDecision } from "./approval.js";
 import type { ModelId, RouteStatus } from "./routes.js";
@@ -113,6 +114,7 @@ export interface OfficeAgent {
   createdAt: string;
 }
 export interface Snapshot {
+  layout?: LayoutSnapshot;
   journalId?: string;
   pendingAdoptions?: { name: string; profileHome: string }[];
   routes: RouteStatus[];
