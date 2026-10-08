@@ -307,3 +307,17 @@ test("ordinary character reassignment after import remains current through save 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("binding maps cannot satisfy explicit references through inherited object properties", () => {
+  const { root, store, transfer } = setup();
+  try {
+    const input = manifest(transfer);
+    input.agents[0].agentId = "constructor";
+    assert.throws(() => transfer.preview(input, {}), LayoutError);
+    const valid = transfer.preview(input, { constructor: null });
+    assert.equal(valid.bindings.constructor, null);
+    store.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

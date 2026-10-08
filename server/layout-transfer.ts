@@ -182,7 +182,7 @@ export class LayoutTransferService {
     );
     if (
       Object.keys(bindings).some((id) => !sourceIds.has(id)) ||
-      manifest.agents.some((ref) => !(ref.agentId in bindings)) ||
+      manifest.agents.some((ref) => !Object.hasOwn(bindings, ref.agentId)) ||
       targetIds.some((id) => !localIds.has(id)) ||
       new Set(targetIds).size !== targetIds.length
     )
