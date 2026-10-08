@@ -36,11 +36,19 @@ export interface Question {
   question: string;
   choices: string[];
   multiSelect: boolean;
+  allowFreeText?: boolean;
+  state?: "open" | "pending" | "locked" | "unknown";
+  answer?: string;
 }
 export interface PendingRequest {
   id: string;
   frameId: string | number;
   innerId?: string;
+  multiSelect?: boolean;
+  allowFreeText?: boolean;
+  answer?: string;
+  responseSchema?: "hermes.clarify.v1";
+  freshness?: Freshness;
   epoch: string;
   sessionId: string;
   kind: "clarify" | "approval" | "unsupported";

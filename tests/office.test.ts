@@ -354,7 +354,8 @@ test("recovery marks unresolved work unknown and never signals or adopts a previ
   t.after(() => reopenedStore.close());
   const record = recovered.snapshot().agents[0];
   assert.equal(record.lifecycle, "unknown");
-  assert.equal(record.requests[0].state, "lost");
+  assert.equal(record.requests[0].state, "open");
+  assert.equal(attention(record)[0].freshness, "unknown");
   assert.equal(record.receipts.at(-1)!.state, "unknown");
   await assert.rejects(recovered.stop(agent.id), /No process was signaled/);
   await assert.rejects(recovered.start(agent.id)); // Live original child retains its lease.
@@ -413,4 +414,184 @@ test("a nonzero shutdown exit is visible even without forced termination", async
   await office.stop(agent.id);
   assert.equal(current().lifecycle, "stopped");
   assert.match(current().error!, /abnormal exit \(code 17\)/);
+});
+
+test("partial batch locks persist, exclude confirmed answers from final reply and resume the same turn", async (t) => {
+  const { office, agent, current, target, store, directory } = await setup(t);
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "multi batch question");
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0],
+    turn = current().turnId;
+  assert.equal(current().work, "tool");
+  assert.equal(r.responseSchema, "hermes.clarify.v1");
+  assert.equal(r.questions[1].multiSelect, true);
+  await assert.rejects(
+    office.lockAnswer(agent.id, r.id, randomUUID(), target(), "alien", "Oak"),
+    /does not support/,
+  );
+  const id = randomUUID();
+  const first = office.lockAnswer(agent.id, r.id, id, target(), "q0", "Birch");
+  await assert.rejects(
+    office.lockAnswer(agent.id, r.id, randomUUID(), target(), "q0", "Oak"),
+    /already locked|awaiting/,
+  );
+  await first;
+  await office.lockAnswer(agent.id, r.id, id, target(), "q0", "Birch");
+  assert.equal(store.agents()[0].requests[0].questions[0].answer, "Birch");
+  assert.equal(current().requests[0].questions[0].state, "locked");
+  await assert.rejects(
+    office.reply(agent.id, r.id, randomUUID(), target(), {
+      answers: { q1: "Blue" },
+    }),
+    /permitted answer/,
+  );
+  await office.reply(agent.id, r.id, randomUUID(), target(), {
+    answers: { q1: JSON.stringify(["Blue", "White"]) },
+  });
+  await until(
+    () =>
+      current().work === "completed" &&
+      !current().busy &&
+      !attention(current()).length,
+  );
+  assert.equal(current().turnId, turn);
+  const log = (
+    await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  assert.equal(log.filter((f) => f.method === "clarify.lock").length, 1);
+  assert.equal(log.filter((f) => f.method === "prompt.submit").length, 1);
+  assert.deepEqual(log.find((f) => f.id === r.frameId && !f.method).result, {
+    answers: { q1: '["Blue","White"]' },
+  });
+  assert.ok(directory);
+});
+
+test("last batch lock has explicit resolution and refuses a later second answer", async (t) => {
+  const { office, agent, current, target } = await setup(t);
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "batch question");
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0];
+  await office.lockAnswer(agent.id, r.id, randomUUID(), target(), "q0", "Oak");
+  await office.lockAnswer(agent.id, r.id, randomUUID(), target(), "q1", "Blue");
+  assert.equal(current().requests[0].state, "resolved");
+  await assert.rejects(
+    office.lockAnswer(agent.id, r.id, randomUUID(), target(), "q1", "White"),
+    /no longer open/,
+  );
+});
+
+test("delivered numeric single reply retains attention until authoritative closure", async (t) => {
+  const { office, agent, current, target } = await setup(t, "delayed-answer");
+  await office.start(agent.id);
+  await office.prompt(
+    agent.id,
+    randomUUID(),
+    target(),
+    "numeric multi question",
+  );
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0];
+  assert.equal(typeof r.frameId, "number");
+  assert.equal(r.multiSelect, true);
+  await assert.rejects(
+    office.reply(agent.id, r.id, randomUUID(), target(), { answer: "Oak" }),
+    /permitted/,
+  );
+  await office.reply(agent.id, r.id, randomUUID(), target(), {
+    answer: '["Oak","Birch"]',
+  });
+  assert.equal(attention(current())[0].state, "delivered");
+  await until(() => current().requests[0].state === "resolved");
+});
+
+test("ordinary prose creates no pending question; malformed schema is unsupported; expiry stays visible", async (t) => {
+  const { office, agent, current, target } = await setup(t);
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "prose question");
+  await until(() => !current().busy);
+  assert.equal(current().requests.length, 0);
+  await office.prompt(agent.id, randomUUID(), target(), "malformed question");
+  await until(() => attention(current()).length === 1);
+  assert.equal(attention(current())[0].kind, "unsupported");
+  await office.interrupt(agent.id, target());
+  await until(() => !current().busy);
+  await office.prompt(agent.id, randomUUID(), target(), "expire question");
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0];
+  await until(
+    () => current().requests.find((q) => q.id === r.id)?.state === "expired",
+  );
+  await assert.rejects(
+    office.reply(agent.id, r.id, randomUUID(), target(), { answer: "Oak" }),
+    /no longer open/,
+  );
+  assert.equal(
+    current().requests.find((q) => q.id === r.id)?.reason,
+    "timeout",
+  );
+});
+
+test("transport loss during a batch lock preserves attention and uncertain answer without retry", async (t) => {
+  const { office, agent, current, target, store } = await setup(
+    t,
+    "lost-lock-ack",
+  );
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "batch question");
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0];
+  const receipt = await office.lockAnswer(
+    agent.id,
+    r.id,
+    randomUUID(),
+    target(),
+    "q0",
+    "Oak",
+  );
+  assert.equal(receipt.state, "unknown");
+  assert.equal(attention(current())[0].questions[0].answer, "Oak");
+  assert.equal(attention(current())[0].questions[0].state, "unknown");
+  assert.equal(attention(current())[0].freshness, "unknown");
+  assert.equal(store.agents()[0].requests[0].questions[0].state, "unknown");
+});
+
+test("one agent's clarification never changes another waiting agent or accepts a foreign session", async (t) => {
+  const { office, agent, current, target, directory } = await setup(t);
+  const other = await office.create("Sora", directory);
+  await Promise.all([office.start(agent.id), office.start(other.id)]);
+  const otherCurrent = () =>
+    office.snapshot().agents.find((a) => a.id === other.id)!;
+  const otherTarget = {
+    epoch: otherCurrent().epoch!,
+    sessionId: otherCurrent().liveSessionId!,
+  };
+  await office.prompt(agent.id, randomUUID(), target(), "batch question");
+  await office.prompt(other.id, randomUUID(), otherTarget, "batch question");
+  await until(
+    () =>
+      attention(current()).length === 1 &&
+      attention(otherCurrent()).length === 1,
+  );
+  const r = attention(current())[0],
+    untouched = otherCurrent();
+  await assert.rejects(
+    office.lockAnswer(
+      agent.id,
+      r.id,
+      randomUUID(),
+      { ...target(), sessionId: otherTarget.sessionId },
+      "q0",
+      "Oak",
+    ),
+    /conversation changed/,
+  );
+  await office.lockAnswer(agent.id, r.id, randomUUID(), target(), "q0", "Oak");
+  await office.lockAnswer(agent.id, r.id, randomUUID(), target(), "q1", "Blue");
+  await until(() => current().work === "completed");
+  assert.deepEqual(otherCurrent(), untouched);
 });
