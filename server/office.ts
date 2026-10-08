@@ -1,3 +1,5 @@
+import { recoverHistory } from "./recovery.js";
+import type { EventBatch } from "../shared/events.js";
 import { parseApproval } from "./approval.js";
 import {
   APPROVAL_CHOICES,
@@ -53,6 +55,7 @@ export class Office extends EventEmitter {
   private agents = new Map<string, OfficeAgent>();
   private runtimes = new Map<string, RpcChild>();
   private closing = false;
+  private reconciliations = new Map<string, Promise<void>>();
   private startups = new Set<Promise<void>>();
   private mutations = new Set<Promise<unknown>>();
   private pendingCreations = 0;
@@ -146,13 +149,29 @@ export class Office extends EventEmitter {
   }
   snapshot(): Snapshot {
     return {
-      revision: this.store.revision(),
-      agents: structuredClone([...this.agents.values()]),
+      ...this.store.checkpoint(),
       mode: this.factory.mode,
       routes: this.factory.routes(),
       pendingAdoptions: this.store
         .adoptions()
         .map(({ name, profileHome }) => ({ name, profileHome })),
+    };
+  }
+  eventsSince(revision: number, journalId: string): EventBatch | undefined {
+    const snapshot = this.snapshot();
+    if (journalId !== snapshot.journalId) return undefined;
+    const events = this.store.since(revision);
+    if (!events) return undefined;
+    return {
+      journalId,
+      from: revision,
+      to: snapshot.revision,
+      events,
+      context: {
+        routes: snapshot.routes,
+        mode: snapshot.mode,
+        pendingAdoptions: snapshot.pendingAdoptions,
+      },
     };
   }
   private get(id: string) {
@@ -465,7 +484,9 @@ export class Office extends EventEmitter {
     const previousBinding = {
       epoch: agent.epoch,
       liveSessionId: agent.liveSessionId,
+      replay: agent.replay,
     };
+    agent.replay = undefined;
     agent.epoch = randomUUID();
     agent.liveSessionId = null;
     agent.lifecycle = "starting";
@@ -483,6 +504,17 @@ export class Office extends EventEmitter {
       const owner = rpc;
       rpc.on("frame", (frame) => {
         if (this.runtimes.get(id) === owner) this.frame(agent, owner, frame);
+      });
+      rpc.on("gap", (sessionId: string) => {
+        if (
+          this.runtimes.get(id) === owner &&
+          sessionId === agent.liveSessionId
+        ) {
+          agent.freshness = "unknown";
+          for (const request of attention(agent)) request.freshness = "unknown";
+          this.changed(agent, "recovery.gap");
+          void this.reconcileRequests(agent, owner).catch(() => {});
+        }
       });
       rpc.on("failure", () => {
         if (this.runtimes.get(id) !== owner || agent.lifecycle === "stopping")
@@ -548,6 +580,7 @@ export class Office extends EventEmitter {
       agent.lifecycle = "failed";
       agent.epoch = previousBinding.epoch;
       agent.liveSessionId = previousBinding.liveSessionId;
+      agent.replay = previousBinding.replay;
       for (const request of attention(agent)) request.freshness = "unknown";
       agent.freshness = "unknown";
       agent.busy = false;
@@ -933,39 +966,163 @@ export class Office extends EventEmitter {
     this.changed(agent, "reply.receipt");
     return structuredClone(receipt);
   }
-  private async reconcileRequests(agent: OfficeAgent, rpc: RpcChild) {
-    const delivered = new Set(
-      agent.requests.filter((r) => r.state === "delivered").map((r) => r.id),
+  async reconcileAll() {
+    await Promise.allSettled(
+      [...this.runtimes].map(([id, rpc]) => {
+        const agent = this.get(id);
+        return agent.lifecycle === "ready"
+          ? this.reconcileRequests(agent, rpc)
+          : Promise.resolve();
+      }),
     );
-    const replay = await rpc.request<{
-      open_requests: Frame[];
-      events?: Record<string, unknown>[];
-    }>("session.events.since", { session_id: agent.liveSessionId });
-    if (
-      this.runtimes.get(agent.id) !== rpc ||
-      !Array.isArray(replay.open_requests)
-    )
-      return;
-    // Native replay contains event payload envelopes, not live JSON-RPC frames.
-    for (const event of Array.isArray(replay.events) ? replay.events : [])
-      if (
-        event &&
-        event.type === "request.cancel" &&
-        event.session_id === agent.liveSessionId
-      )
-        this.frame(agent, rpc, {
-          jsonrpc: "2.0",
-          method: "event",
-          params: event,
-        });
-    for (const request of agent.requests)
-      if (
-        delivered.has(request.id) &&
-        request.state === "delivered" &&
-        !replay.open_requests.some((r) => r.id === request.frameId)
-      )
-        request.state = "resolved";
-    this.changed(agent, "requests.reconciled");
+  }
+  private reconcileRequests(agent: OfficeAgent, rpc: RpcChild): Promise<void> {
+    const existing = this.reconciliations.get(agent.id);
+    if (existing) return existing;
+    // Defer work so synchronous replay-triggered frames see the coalesced operation.
+    const work = Promise.resolve()
+      .then(() => this.reconcileRuntime(agent, rpc))
+      .finally(() => {
+        if (this.reconciliations.get(agent.id) === work)
+          this.reconciliations.delete(agent.id);
+      });
+    this.reconciliations.set(agent.id, work);
+    return work;
+  }
+  private async reconcileRuntime(agent: OfficeAgent, rpc: RpcChild) {
+    const session = agent.liveSessionId;
+    const turn = agent.turnId;
+    const known = new Set(attention(agent).map((r) => r.id));
+    const current = () =>
+      this.runtimes.get(agent.id) === rpc &&
+      agent.liveSessionId === session &&
+      agent.turnId === turn &&
+      agent.lifecycle === "ready";
+    if (!session || !current()) return;
+    try {
+      let replay = await rpc.replay(session);
+      if (!current()) return;
+      const gap =
+        replay.truncated === true ||
+        rpc.sequence.cursor(session) < replay.latest_seq;
+      let snapshot: Record<string, unknown> | undefined;
+      if (gap) {
+        agent.freshness = "unknown";
+        for (const request of attention(agent)) request.freshness = "unknown";
+        this.changed(agent, "recovery.checkpoint_pending");
+        // Hermes does not provide an atomic snapshot watermark. Accept a public snapshot
+        // only across a quiet native sequence interval; never label missing outcomes complete.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const before = await rpc.replay(session, false);
+          const candidate: Record<string, unknown> = await rpc.request<
+            Record<string, unknown>
+          >("session.activate", { session_id: session }, 1200);
+          const after = await rpc.replay(session, false);
+          if (!current()) return;
+          if (
+            before.epoch === after.epoch &&
+            before.latest_seq === after.latest_seq &&
+            rpc.sequence.cursor(session) <= after.latest_seq &&
+            candidate.session_id === session &&
+            typeof candidate.running === "boolean"
+          ) {
+            snapshot = candidate;
+            replay = after;
+            break;
+          }
+        }
+        if (!snapshot)
+          throw new Error("Native snapshot changed during recovery.");
+        recoverHistory(agent, snapshot);
+        agent.work = "unknown";
+        agent.busy = snapshot.running === true;
+        // Commit the checkpoint before releasing any buffered later events.
+        agent.replay = { epoch: replay.epoch, sequence: replay.latest_seq };
+        this.changed(agent, "recovery.checkpoint");
+        rpc.checkpoint(session, replay.latest_seq);
+      } else {
+        snapshot = await rpc.request<Record<string, unknown>>(
+          "session.activate",
+          { session_id: session },
+          1200,
+        );
+        if (!current()) return;
+        // A running=false snapshot only releases admission; it cannot prove task success.
+        if (snapshot.running === false) agent.busy = false;
+      }
+      if (!current()) return;
+      for (const frame of replay.open_requests) {
+        if (frame.params?.session_id !== session || frame.method === "event")
+          continue;
+        this.frame(agent, rpc, { ...frame, jsonrpc: "2.0" });
+        const pending = agent.requests.find(
+          (r) => r.epoch === agent.epoch && r.frameId === frame.id,
+        );
+        if (!pending || !["open", "delivered"].includes(pending.state))
+          continue;
+        const parsed =
+          frame.method === "clarify"
+            ? parseClarification(frame.params)
+            : undefined;
+        if (parsed)
+          for (const question of pending.questions) {
+            const native = parsed.questions.find((q) => q.qid === question.qid);
+            if (native?.state === "locked")
+              Object.assign(question, {
+                state: "locked",
+                answer: native.answer,
+              });
+          }
+        // Unknown reply delivery never becomes permission to resend a one-shot answer.
+        pending.freshness =
+          pending.decision?.delivery === "unknown" ||
+          pending.questions.some((q) => q.state === "unknown")
+            ? "unknown"
+            : "current";
+      }
+      for (const pending of attention(agent)) {
+        if (
+          !known.has(pending.id) ||
+          replay.open_requests.some((r) => r.id === pending.frameId)
+        )
+          continue;
+        pending.state =
+          !gap && pending.state === "delivered" ? "resolved" : "lost";
+        pending.freshness = "current";
+        pending.reason =
+          "Hermes no longer reports this request as open. Missing outcome was not replayed.";
+      }
+      if (rpc.sequence.hasGap(session))
+        throw new Error("Native events still have a gap.");
+      agent.replay = {
+        epoch: replay.epoch,
+        sequence: rpc.sequence.cursor(session),
+      };
+      agent.freshness = "current";
+      if (!gap && agent.work === "unknown") {
+        const terminal = agent.messages
+          .filter((m) => m.turnId === turn && m.role === "assistant")
+          .at(-1);
+        if (
+          terminal &&
+          ["complete", "failed", "interrupted"].includes(terminal.state)
+        )
+          agent.work =
+            terminal.state === "complete"
+              ? "completed"
+              : (terminal.state as "failed" | "interrupted");
+      }
+      this.changed(agent, "requests.reconciled");
+    } catch (error) {
+      if (current()) {
+        agent.freshness = "unknown";
+        for (const request of attention(agent)) request.freshness = "unknown";
+        agent.error =
+          "Recovery could not confirm current runtime state. Known history and requests are retained; commands were not resent.";
+        this.changed(agent, "recovery.unknown");
+      }
+      throw error;
+    }
   }
   private assistant(agent: OfficeAgent, forceNew = false): ChatItem {
     const segments = agent.messages.filter(
@@ -1037,6 +1194,8 @@ export class Office extends EventEmitter {
       payload = (params.payload ?? {}) as Record<string, unknown>;
     const key = `${agent.id}:${agent.epoch}:${params.seq ?? randomUUID()}`;
     if (this.store.hasEvent(key)) return;
+    if (typeof params.seq === "number" && rpc.replayEpoch)
+      agent.replay = { epoch: rpc.replayEpoch, sequence: params.seq };
     switch (type) {
       case "session.info":
         if (typeof payload.running === "boolean") agent.busy = payload.running;
@@ -1177,7 +1336,7 @@ export class Office extends EventEmitter {
           "Hermes reported a runtime error. The task outcome remains unknown until terminal evidence arrives.";
         break;
       default:
-        return; // Hidden reasoning, internal prompts and unknown events never enter the UI journal.
+        return; // Only the sequence advances; private event payloads are never journaled.
     }
     this.changed(agent, type, key);
   }
@@ -1188,6 +1347,10 @@ export class Office extends EventEmitter {
     );
     // Discovery/profile verification can still be awaiting IO before a child exists.
     // Keep the store alive until those starts observe closing and record their outcome.
-    await Promise.allSettled([...this.startups, ...this.mutations]);
+    await Promise.allSettled([
+      ...this.startups,
+      ...this.mutations,
+      ...this.reconciliations.values(),
+    ]);
   }
 }

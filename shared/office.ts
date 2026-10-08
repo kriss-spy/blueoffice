@@ -69,6 +69,7 @@ export interface Conversation {
   createdAt: string;
 }
 export interface OfficeAgent {
+  replay?: { epoch: string; sequence: number };
   settingsVersion?: number;
   configRevision?: string;
   configHistory?: {
@@ -103,6 +104,7 @@ export interface OfficeAgent {
   createdAt: string;
 }
 export interface Snapshot {
+  journalId?: string;
   pendingAdoptions?: { name: string; profileHome: string }[];
   routes: RouteStatus[];
   revision: number;

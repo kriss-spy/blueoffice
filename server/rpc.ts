@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { EventSequence } from "./sequence.js";
 import { FrameRedactor } from "./redaction.js";
 
 export type Frame = {
@@ -29,7 +30,18 @@ export interface Launch {
 }
 
 /** One transport belongs to one child. No global process name/PID lookup is used for signals. */
+export interface NativeReplay {
+  events: Record<string, unknown>[];
+  open_requests: Frame[];
+  latest_seq: number;
+  epoch: string;
+  truncated?: boolean;
+}
 export class RpcChild extends EventEmitter {
+  readonly sequence = new EventSequence();
+  replayEpoch?: string;
+  private redactor: FrameRedactor;
+  private readyReceived!: () => void;
   readonly child: ChildProcessWithoutNullStreams;
   readonly ready: Promise<void>;
   readonly exited: Promise<{
@@ -107,9 +119,11 @@ export class RpcChild extends EventEmitter {
         new RpcFailure("The owned runtime command channel closed.", true),
       ),
     );
-    const redactor = new FrameRedactor(
-      launch.options.env?.BLUEOFFICE_PROXY_KEY,
-    );
+    this.readyReceived = () => {
+      clearTimeout(readyTimer);
+      readyResolve();
+    };
+    this.redactor = new FrameRedactor(launch.options.env?.BLUEOFFICE_PROXY_KEY);
     let buffer = "";
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => {
@@ -134,32 +148,7 @@ export class RpcChild extends EventEmitter {
             typeof rawFrame !== "object"
           )
             throw new Error();
-          for (const frame of redactor.frames(rawFrame)) {
-            if (!frame || frame.jsonrpc !== "2.0" || typeof frame !== "object")
-              throw new Error();
-            if (
-              frame.method === "event" &&
-              frame.params?.type === "gateway.ready"
-            ) {
-              clearTimeout(readyTimer);
-              readyResolve();
-            }
-            if (!frame.method && typeof frame.id === "number") {
-              const pending = this.pending.get(frame.id);
-              if (pending) {
-                this.pending.delete(frame.id);
-                clearTimeout(pending.timer);
-                // Raw upstream errors can contain credentials or private arguments.
-                if (frame.error)
-                  pending.reject(
-                    new RpcFailure(
-                      `Hermes rejected the operation (RPC ${Number.isInteger(frame.error.code) ? frame.error.code : "unknown"}).`,
-                    ),
-                  );
-                else pending.resolve(frame.result);
-              }
-            } else this.emit("frame", frame);
-          }
+          this.ingest(rawFrame);
         } catch {
           this.fail(
             new RpcFailure("Hermes emitted a malformed protocol frame.", true),
@@ -170,6 +159,75 @@ export class RpcChild extends EventEmitter {
     });
     // Drain stderr, but never forward raw process diagnostics/secrets to ordinary logs or clients.
     this.child.stderr.on("data", () => {});
+  }
+  private ingest(rawFrame: Frame) {
+    const ordered = this.sequence.accept(rawFrame);
+    for (const item of ordered.frames) this.publish(item);
+    if (ordered.gap) this.emit("gap", ordered.gap);
+  }
+  private publish(rawFrame: Frame) {
+    for (const frame of this.redactor.frames(rawFrame)) {
+      if (frame.method === "event" && frame.params?.type === "gateway.ready") {
+        const payload = frame.params.payload as
+          Record<string, unknown> | undefined;
+        if (typeof payload?.replay_epoch === "string")
+          this.replayEpoch = payload.replay_epoch;
+        this.readyReceived();
+      }
+      if (!frame.method && typeof frame.id === "number") {
+        const pending = this.pending.get(frame.id);
+        if (pending) {
+          this.pending.delete(frame.id);
+          clearTimeout(pending.timer);
+          if (frame.error)
+            pending.reject(
+              new RpcFailure(
+                `Hermes rejected the operation (RPC ${Number.isInteger(frame.error.code) ? frame.error.code : "unknown"}).`,
+              ),
+            );
+          else pending.resolve(frame.result);
+        }
+      } else this.emit("frame", frame);
+    }
+  }
+  async replay(session: string, apply = true): Promise<NativeReplay> {
+    const replay = await this.request<NativeReplay>(
+      "session.events.since",
+      {
+        session_id: session,
+        last_seen: this.sequence.cursor(session),
+      },
+      1200,
+    );
+    if (
+      !replay ||
+      !Array.isArray(replay.events) ||
+      !Array.isArray(replay.open_requests) ||
+      !Number.isSafeInteger(replay.latest_seq) ||
+      replay.latest_seq < 0 ||
+      typeof replay.epoch !== "string" ||
+      (this.replayEpoch && replay.epoch !== this.replayEpoch)
+    )
+      throw new RpcFailure("Native replay epoch or response is invalid.", true);
+    this.replayEpoch = replay.epoch;
+    if (apply && !replay.truncated) {
+      for (const event of [...replay.events].sort(
+        (a, b) => Number(a.seq) - Number(b.seq),
+      )) {
+        if (event.session_id !== session || !Number.isSafeInteger(event.seq))
+          throw new RpcFailure(
+            "Native replay contains an invalid event.",
+            true,
+          );
+        this.ingest({ jsonrpc: "2.0", method: "event", params: event });
+      }
+    }
+    return replay;
+  }
+  checkpoint(session: string, sequence: number) {
+    this.redactor.reset(session);
+    for (const frame of this.sequence.checkpoint(session, sequence))
+      this.publish(frame);
   }
   private fail(error: RpcFailure) {
     if (this.failed) return;

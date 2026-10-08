@@ -1,4 +1,5 @@
 """Independent synthetic RPC process for supervisor tests and opt-in offline UI."""
+import ctypes
 import fcntl
 import json
 import os
@@ -8,6 +9,13 @@ import sys
 import threading
 import time
 import uuid
+
+# Mirror the production owned gateway: a crashed supervisor cannot leave an
+# orphan fixture holding the profile lease. No saved PID is used for signals.
+parent = os.getppid()
+ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGTERM, 0, 0, 0)
+if os.getppid() != parent or parent == 1:
+    raise SystemExit(1)
 
 profile, scenario = Path(sys.argv[1]), sys.argv[2]
 lease = open(profile / ".blueoffice-lease", "w")
@@ -28,6 +36,9 @@ seq = 0
 busy = False
 requests = {}
 replay_events = []
+history = []
+omitted_delta = False
+truncated_through = 0
 write_lock = threading.Lock()
 cancel_generation = 0
 
@@ -38,17 +49,30 @@ def write(frame):
 
 
 def event(kind, payload=None):
-    global seq
+    global seq, omitted_delta, truncated_through
     with write_lock:
         seq += 1
-        print(json.dumps({"jsonrpc": "2.0", "method": "event", "params": {
-            "type": kind, "session_id": session, "seq": seq, "payload": payload or {}}}), flush=True)
+        data = {"type": kind, "session_id": session, "seq": seq, "payload": payload or {}}
+        replay_events.append(data)
+        if scenario == "truncated" and busy and kind != "recovery.trigger":
+            return
+        if scenario == "truncated" and kind == "recovery.trigger":
+            truncated_through = seq - 1
+            replay_events[:] = [data]
+        if scenario == "replay-order" and kind == "message.delta" and not omitted_delta:
+            omitted_delta = True
+            return
+        wire = json.dumps({"jsonrpc": "2.0", "method": "event", "params": data})
+        print(wire, flush=True)
+        if scenario == "replay-order":
+            print(wire, flush=True)
 
 
 def finish(generation):
     global busy
     if generation != cancel_generation:
         return
+    history.append({"role": "assistant", "text": "Fixture task complete. Your workspace is ready."})
     event("message.delta", {"text": "Fixture task complete. "})
     event("message.complete", {"text": "Fixture task complete. Your workspace is ready.", "status": "complete"})
     time.sleep(0.02)  # Deliberately retain busy after completion, as installed Hermes does.
@@ -65,7 +89,7 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
-    if scenario == "split-credential":
+    if scenario in ("split-credential", "replay-order"):
         key = os.environ["BLUEOFFICE_PROXY_KEY"]
         for part in ("Safe prefix ", key[:10], key[10:14], key[14:], " done ", "synt"):
             event("message.delta", {"text": part})
@@ -127,7 +151,10 @@ def task(prompt, generation):
             params = {"session_id": session, "prompt": "PRIVATE_SECRET_CANARY", "command": "PRIVATE_SUDO_COMMAND", "display_name": "PRIVATE_VAULT_NAME"}
         frame = {"id": generation if "numeric" in lower else f"srq-{generation}", "method": kind, "params": params}
         requests[frame["id"]] = frame
-        write(frame)
+        if scenario not in ("missing-request", "truncated"):
+            write(frame)
+        if scenario == "truncated":
+            event("recovery.trigger")
         if "expire" in lower or "resolve approval" in lower:
             def expire():
                 time.sleep(0.25)
@@ -170,10 +197,10 @@ for line in sys.stdin:
     if method == "session.create":
         result = {"session_id": session, "stored_session_id": "stored-" + session}
     elif method == "session.activate":
-        result = {"running": busy, "open_requests": list(requests.values())}
+        result = {"session_id": session, "running": busy, "open_requests": list(requests.values()), "messages": history, "messages_omitted": False}
         time.sleep(0.05)  # Response can arrive after a newer settled session.info.
     elif method == "session.events.since":
-        result = {"open_requests": list(requests.values()), "events": replay_events, "epoch": "fixture-epoch", "latest_seq": seq}
+        result = {"open_requests": list(requests.values()), "events": [e for e in replay_events if e["seq"] > params.get("last_seen", 0)], "epoch": "fixture-epoch", "latest_seq": seq, "truncated": params.get("last_seen", 0) < truncated_through}
     elif method == "clarify.lock":
         request = requests.get(params["request_id"])
         if not request:
@@ -197,6 +224,7 @@ for line in sys.stdin:
             result = {"status": "queued"}
         else:
             busy = True
+            history.append({"role": "user", "text": params["text"]})
             cancel_generation += 1
             result = {"status": "streaming"}
             if scenario == "lost-ack":

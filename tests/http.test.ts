@@ -120,3 +120,51 @@ test("loopback HTTP authenticates commands/events and rejects hostile origins, h
   });
   assert.equal(noCsrf.status, 403);
 });
+
+test("SSE resumes after a consistent checkpoint and resets on retention gap or journal replacement", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "blueoffice-sse-"));
+  const store = new OfficeStore(join(directory, "office.db"), 2);
+  const office = new Office(store, new FixtureRuntime(directory));
+  const app = officeServer(office);
+  await new Promise<void>((resolve) =>
+    app.server.listen(0, "127.0.0.1", resolve),
+  );
+  t.after(async () => {
+    await app.close();
+    store.close();
+  });
+  const url = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+  const auth = await fetch(url + "/api/session");
+  const cookie = auth.headers.get("set-cookie")!.split(";")[0];
+  const initial = (await auth.json()).snapshot;
+  const agent = await office.create("Recovery", directory);
+  const first = async (cursor: string) => {
+    const controller = new AbortController();
+    const response = await fetch(url + "/api/events", {
+      headers: { Cookie: cookie, "Last-Event-ID": cursor },
+      signal: controller.signal,
+    });
+    const reader = response.body!.getReader();
+    let text = "";
+    while (!text.includes("\n\n"))
+      text += new TextDecoder().decode((await reader.read()).value);
+    controller.abort();
+    return text;
+  };
+  const replay = await first(`${initial.journalId}:${initial.revision}`);
+  assert.match(replay, /event: updates/);
+  const data = JSON.parse(replay.split("data: ")[1].split("\n")[0]);
+  assert.equal(data.events.length, 1);
+  assert.equal(data.events[0].agentId, agent.id);
+  await office.start(agent.id);
+  const fallback = await first(`${initial.journalId}:${initial.revision}`);
+  assert.match(fallback, /event: snapshot/);
+  assert.equal(
+    JSON.parse(fallback.split("data: ")[1].split("\n")[0]).agents[0].lifecycle,
+    "ready",
+  );
+  assert.match(
+    await first(`replacement:${office.snapshot().revision}`),
+    /event: snapshot/,
+  );
+});

@@ -311,6 +311,10 @@ test("lost admission is unknown and a duplicate command never resubmits it", asy
     (await office.prompt(agent.id, cid, binding, "slow task")).state,
     "unknown",
   );
+  await office.reconcileAll();
+  assert.equal(current().freshness, "current");
+  assert.equal(current().busy, true);
+  assert.equal(current().receipts.find((r) => r.id === cid)!.state, "unknown");
   const log = (
     await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
   )
@@ -364,7 +368,9 @@ test("recovery marks unresolved work unknown and never signals or adopts a previ
     record.requests[0].id,
   );
   assert.equal(recovered.snapshot().agents[0].epoch, record.epoch);
-  assert.equal(current().lifecycle, "ready");
+  // The committed checkpoint now reflects the new supervisor. The original
+  // child is still owned by its live handle, as a successful interrupt proves.
+  await office.interrupt(agent.id, target());
   await office.stop(agent.id);
   await recovered.start(agent.id);
   assert.equal(recovered.snapshot().agents[0].lifecycle, "ready");
@@ -921,3 +927,77 @@ test("supervisor recovery retains an admitted permission decision with unknown d
     0,
   );
 });
+
+test("native recovery reorders missing chunks before redaction and never duplicates replayed text", async (t) => {
+  const { office, agent, current, target, factory } = await setup(
+    t,
+    "replay-order",
+  );
+  const launch = factory.launch.bind(factory);
+  factory.launch = async (agent) => {
+    const result = await launch(agent);
+    result.options.env!.BLUEOFFICE_PROXY_KEY = "synthetic-review-key";
+    return result;
+  };
+  const snapshots: string[] = [];
+  office.on("change", () => snapshots.push(JSON.stringify(office.snapshot())));
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "replay chunks");
+  await until(() => current().work === "completed" && !current().busy);
+  await office.reconcileAll();
+  assert.equal(
+    current()
+      .messages.filter((m) => m.role === "assistant")
+      .map((m) => m.text)
+      .join(""),
+    "Safe prefix [redacted] done synt",
+  );
+  for (const snapshot of snapshots)
+    assert.doesNotMatch(
+      snapshot,
+      /synthetic-review|synthetic-|HIDDEN_REASONING_CANARY|PRIVATE_SYSTEM_CANARY/,
+    );
+  assert.equal(current().freshness, "current");
+});
+
+for (const scenario of ["missing-request", "truncated"]) {
+  test(`native ${scenario} recovery restores the exact waiting permission without invented completion`, async (t) => {
+    const { office, agent, current, target, directory } = await setup(
+      t,
+      scenario,
+    );
+    await office.start(agent.id);
+    await office.prompt(agent.id, randomUUID(), target(), "ask approval");
+    await delay(120);
+    const started = performance.now();
+    await office.reconcileAll();
+    assert.ok(performance.now() - started < 3000);
+    const request = attention(current())[0];
+    assert.ok(request);
+    assert.equal(request.frameId, "srq-1");
+    assert.equal(request.innerId, "inner-permission");
+    assert.equal(request.freshness, "current");
+    assert.equal(current().busy, true);
+    assert.notEqual(current().work, "completed");
+    assert.equal(current().messages.filter((m) => m.role === "user").length, 1);
+    const stable = JSON.stringify(request);
+    await office.reconcileAll();
+    assert.equal(JSON.stringify(attention(current())[0]), stable);
+    await office.reply(agent.id, request.id, randomUUID(), target(), {
+      choice: "deny",
+    });
+    await until(() => !attention(current()).length);
+    const frames = (
+      await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(frames.filter((f) => f.method === "prompt.submit").length, 1);
+    assert.equal(
+      frames.filter((f) => !f.method && f.id === request.frameId).length,
+      1,
+    );
+    assert.equal(current().workspace, directory);
+  });
+}

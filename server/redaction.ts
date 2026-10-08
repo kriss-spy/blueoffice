@@ -5,6 +5,10 @@ export class FrameRedactor {
   private tails = new Map<unknown, string>();
   constructor(private secret: string | undefined) {}
 
+  reset(session: string) {
+    this.tails.delete(session);
+  }
+
   frames(frame: Frame): Frame[] {
     if (!this.secret) return [frame];
     const secret = this.secret;

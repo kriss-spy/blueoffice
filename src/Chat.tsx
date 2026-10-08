@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import {
   attention,
   status,
@@ -23,7 +29,35 @@ export function Chat({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
-  const follow = useRef(true);
+  const savedPosition = useRef(readPosition(agent.id));
+  const follow = useRef(savedPosition.current.follow);
+  const savePosition = () => {
+    if (!transcript.current) return;
+    try {
+      localStorage.setItem(
+        `blueoffice.chat-position.v1:${agent.id}`,
+        JSON.stringify({
+          top: transcript.current.scrollTop,
+          follow: follow.current,
+        }),
+      );
+    } catch {
+      /* Browser storage may be disabled. */
+    }
+  };
+  useLayoutEffect(() => {
+    if (transcript.current)
+      transcript.current.scrollTop = follow.current
+        ? transcript.current.scrollHeight
+        : savedPosition.current.top;
+  }, []);
+  useEffect(() => {
+    window.addEventListener("pagehide", savePosition);
+    return () => {
+      savePosition();
+      window.removeEventListener("pagehide", savePosition);
+    };
+  }, [agent.id]);
   const pending = attention(agent);
   const ready =
     connected && agent.lifecycle === "ready" && agent.freshness === "current";
@@ -118,6 +152,7 @@ export function Chat({
           const el = transcript.current!;
           follow.current =
             el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          savePosition();
         }}
       >
         {agent.messages.length === 0 ? (
@@ -284,4 +319,22 @@ export function Chat({
       </footer>
     </section>
   );
+}
+
+function readPosition(id: string): { top: number; follow: boolean } {
+  try {
+    const value = JSON.parse(
+      localStorage.getItem(`blueoffice.chat-position.v1:${id}`) ?? "null",
+    );
+    if (
+      value &&
+      Number.isFinite(value.top) &&
+      value.top >= 0 &&
+      typeof value.follow === "boolean"
+    )
+      return value;
+  } catch {
+    /* Restore the default following behavior if no valid checkpoint exists. */
+  }
+  return { top: 0, follow: true };
 }
