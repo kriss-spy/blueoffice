@@ -1,0 +1,45 @@
+{
+  "passed": true,
+  "model": "glm-5.3-flash",
+  "mode": "live",
+  "agentId": "1ce55eb0-4f24-4a1e-b80a-2845f9504d0d",
+  "turnId": "b5092ce8-e67a-4435-9a78-7a37bcce9ada",
+  "terminal": {
+    "epoch": "2b813880-5e61-4a31-8276-134ea21cc80a",
+    "turnId": "b5092ce8-e67a-4435-9a78-7a37bcce9ada",
+    "outcome": "completed"
+  },
+  "publicReply": "BlueOffice live scene verified.",
+  "toolCalls": 0,
+  "requests": 0,
+  "scene": {
+    "camera": {
+      "position": [
+        10.000000000000002,
+        9.999999999999998,
+        13.000000000000002
+      ],
+      "target": [
+        0,
+        0.6,
+        0
+      ],
+      "zoom": 62.339661133686825
+    },
+    "assets": "yuuka.original.proof",
+    "agents": [
+      {
+        "id": "1ce55eb0-4f24-4a1e-b80a-2845f9504d0d",
+        "deskId": "desk-1",
+        "label": "Completed",
+        "work": "completed",
+        "requests": [],
+        "cue": true,
+        "motion": "react",
+        "paused": false
+      }
+    ]
+  },
+  "stopped": true,
+  "errors": []
+}

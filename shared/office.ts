@@ -128,26 +128,85 @@ export function attention(agent: OfficeAgent) {
   );
 }
 export function status(agent: OfficeAgent): string {
-  if (agent.freshness === "unknown") return "Unknown";
-  if (agent.lifecycle !== "ready")
-    return {
+  return presentAgent(agent).label;
+}
+
+const workLabels = {
+  idle: "Ready",
+  working: "Working",
+  tool: "Using a tool",
+  interrupting: "Interrupting",
+  completed: "Completed",
+  interrupted: "Interrupted",
+  failed: "Task failed",
+  unknown: "Unknown",
+} as const;
+
+/** One projection for room, roster, chat and activity; decoration never changes it. */
+export function presentAgent(agent: OfficeAgent, connected = true) {
+  const requests = attention(agent);
+  const current = connected && agent.freshness === "current";
+  const workLabel = workLabels[agent.work];
+  let label: string;
+  let tone = "ready";
+  if (!current || agent.lifecycle === "unknown") {
+    label = connected ? "Status unknown" : "Disconnected · status unknown";
+    tone = "unknown";
+  } else if (agent.lifecycle !== "ready") {
+    label = {
       stopped: "Stopped",
       starting: "Starting",
       stopping: "Stopping",
       failed: "Startup failed",
-      unknown: "Unknown",
     }[agent.lifecycle];
-  const waiting = attention(agent);
-  if (waiting.some((r) => r.kind === "approval")) return "Needs permission";
-  if (waiting.length) return "Needs an answer";
+    tone = agent.lifecycle === "failed" ? "failed" : "stopped";
+  } else if (requests.length) {
+    label = requests.some((r) => r.kind === "approval")
+      ? "Needs permission"
+      : requests.some((r) => r.kind === "clarify")
+        ? "Needs an answer"
+        : "Input unavailable";
+    tone = requests.some((r) => r.kind === "approval")
+      ? "approval"
+      : "question";
+  } else if (agent.failureKind === "quota" && agent.work === "failed") {
+    label = "Provider limit reached";
+    tone = "failed";
+  } else {
+    label = workLabel;
+    tone = ["failed", "unknown"].includes(agent.work)
+      ? agent.work
+      : agent.work === "completed"
+        ? "completed"
+        : agent.busy
+          ? "working"
+          : "ready";
+  }
+  const detail =
+    requests.length && label !== workLabel
+      ? current
+        ? workLabel
+        : `Last known: ${workLabel}`
+      : "";
+  const terminalKey = agent.terminal
+    ? `${agent.id}:${agent.terminal.epoch}:${agent.terminal.turnId}`
+    : undefined;
+  const canCelebrate =
+    current &&
+    agent.lifecycle === "ready" &&
+    !requests.length &&
+    agent.work === "completed" &&
+    agent.terminal?.outcome === "completed" &&
+    agent.terminal.epoch === agent.epoch &&
+    agent.terminal.turnId === agent.turnId;
   return {
-    idle: "Ready",
-    working: "Working",
-    tool: "Using a tool",
-    interrupting: "Interrupting",
-    completed: "Completed",
-    interrupted: "Interrupted",
-    failed: "Task failed",
-    unknown: "Unknown",
-  }[agent.work];
+    label,
+    detail,
+    tone,
+    requests,
+    current,
+    terminalKey,
+    canCelebrate,
+    pauseMotion: !current || agent.lifecycle !== "ready" || requests.length > 0,
+  };
 }

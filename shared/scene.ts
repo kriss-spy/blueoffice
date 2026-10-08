@@ -1,5 +1,23 @@
 export type Point = [number, number, number];
 export type QuarterTurn = 0 | 1 | 2 | 3;
+export const defaultDesks = [
+  [-1.45, 0, 1.9],
+  [0.95, 0, 1.9],
+  [-3.85, 0, 1.9],
+  [3.35, 0, 1.9],
+  [-1.45, 0, -0.6],
+  [0.95, 0, -0.6],
+  [-3.85, 0, -0.6],
+  [3.35, 0, -0.6],
+].map((position, i) => ({
+  id: `desk-${i + 1}`,
+  position: position as Point,
+  rotation: 0 as QuarterTurn,
+}));
+export function availableDesk(used: Iterable<string | null>) {
+  const occupied = new Set(used);
+  return defaultDesks.find((desk) => !occupied.has(desk.id))?.id ?? null;
+}
 export const workstation = {
   id: "blueoffice.workstation.v1",
   unit: "meter",

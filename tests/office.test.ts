@@ -1074,3 +1074,30 @@ for (const scenario of [
     for (const value of published)
       assert.doesNotMatch(value, /synthetic-|review-key/);
   });
+
+test("workstation assignments survive runtime restart and migrate null legacy desks without stealing existing ones", async (t) => {
+  const { office, agent, current, directory } = await setup(t);
+  const second = await office.create("Second", directory);
+  assert.equal(current().deskId, "desk-1");
+  assert.equal(second.deskId, "desk-2");
+  await office.start(agent.id);
+  await office.stop(agent.id);
+  await office.start(agent.id);
+  assert.equal(current().deskId, "desk-1");
+  await office.shutdown();
+  const copyStore = new OfficeStore(join(directory, "migration.db"));
+  const first = { ...current(), deskId: null };
+  copyStore.save(first, "fixture", randomUUID());
+  copyStore.save({ ...second, deskId: "desk-1" }, "fixture", randomUUID());
+  const restored = new Office(copyStore, new FixtureRuntime(directory));
+  assert.equal(
+    restored.snapshot().agents.find((a) => a.id === agent.id)?.deskId,
+    "desk-2",
+  );
+  assert.equal(
+    restored.snapshot().agents.find((a) => a.id === second.id)?.deskId,
+    "desk-1",
+  );
+  await restored.shutdown();
+  copyStore.close();
+});

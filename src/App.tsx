@@ -1,9 +1,23 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  lazy,
+  Suspense,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import type { Snapshot } from "../shared/office";
-import { attention, status } from "../shared/office";
+import { attention, presentAgent } from "../shared/office";
 import { command, connectOffice } from "./api";
 import { Chat } from "./Chat";
 import { SettingsDialog } from "./SettingsDialog";
+
+const OfficeScene = lazy(() =>
+  import("./scene/OfficeScene").then((module) => ({
+    default: module.OfficeScene,
+  })),
+);
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -25,6 +39,33 @@ export function App() {
   >();
   const [acting, setActing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const [chatWidth, setChatWidth] = useState(() => {
+    const saved = Number(localStorage.getItem("blueoffice.chat-width.v1"));
+    return saved >= 320 && saved <= 560 ? saved : 380;
+  });
+  const workspace = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const resizeChat = (value: number) => {
+    const width = Math.max(
+      320,
+      Math.min(
+        560,
+        (workspace.current?.clientWidth ?? innerWidth) - 600,
+        value,
+      ),
+    );
+    setChatWidth(width);
+    try {
+      localStorage.setItem("blueoffice.chat-width.v1", String(width));
+    } catch {
+      /* Storage can be unavailable. */
+    }
+  };
+  useEffect(() => {
+    const resized = () => resizeChat(chatWidth);
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
+  }, [chatWidth]);
   const agents = snapshot.agents;
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
   useEffect(() => connectOffice(setSnapshot, setConnected, setError), []);
@@ -72,7 +113,9 @@ export function App() {
   const running = agents.filter((a) => a.lifecycle === "ready").length;
   const waiting = agents.reduce((sum, a) => sum + attention(a).length, 0);
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell live-office ${snapshot.mode === "fixture" ? "fixture-office" : ""}`}
+    >
       <header className="topbar">
         <a href="/" className="brand" aria-label="BlueOffice home">
           <img src="/blueoffice-logo.png" alt="BlueOffice" />
@@ -98,7 +141,11 @@ export function App() {
           calls are made.
         </div>
       ) : null}
-      <div className="workspace">
+      <div
+        className="workspace"
+        ref={workspace}
+        style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}
+      >
         <aside className="roster" aria-label="Office agents">
           <div className="roster-title">
             <h1>Office</h1>
@@ -132,7 +179,7 @@ export function App() {
                 </span>
                 <span className="agent-row-copy">
                   <strong>{a.name}</strong>
-                  <small>{connected ? status(a) : "Unknown"}</small>
+                  <small>{presentAgent(a, connected).label}</small>
                 </span>
                 {attention(a).length ? (
                   <span
@@ -146,12 +193,37 @@ export function App() {
             ))}
           </nav>
           {!agents.length ? (
-            <p className="roster-empty">
-              Your first assistant
-              <br />
-              starts here.
-            </p>
+            <button
+              className="primary first-agent"
+              disabled={!connected}
+              onClick={() => dialog.current?.showModal()}
+            >
+              Add your first agent
+            </button>
           ) : null}
+          {waiting > 0 && (
+            <section className="roster-attention" aria-label="Attention queue">
+              <h2>Waiting for you</h2>
+              {agents.flatMap((a) =>
+                attention(a).map((request) => (
+                  <button
+                    key={request.id}
+                    onClick={() => {
+                      select(a.id);
+                      setFocusRequest({ id: request.id });
+                    }}
+                  >
+                    <strong>{a.name}</strong>
+                    <small>
+                      {request.kind === "approval"
+                        ? "Needs permission"
+                        : "Needs an answer"}
+                    </small>
+                  </button>
+                )),
+              )}
+            </section>
+          )}
           <div className="roster-bottom">
             <span aria-hidden="true">☕</span>
             <p>
@@ -161,22 +233,7 @@ export function App() {
             </p>
           </div>
         </aside>
-        <main className="office-main">
-          <div className="overview-heading">
-            <div>
-              <p className="date-label">
-                {new Date().toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-              <h2>{agent ? "At your service." : "Welcome to BlueOffice."}</h2>
-            </div>
-            <span className="attention-summary">
-              {waiting ? `${waiting} awaiting you` : "All quiet here"}
-            </span>
-          </div>
+        <main className="office-stage">
           {error ? (
             <div className="error-banner" role="alert">
               {error}
@@ -204,153 +261,90 @@ export function App() {
               </button>
             </div>
           ))}
-          {agent ? (
-            <section className="agent-overview" aria-label="Selected agent">
-              <div className="agent-badge">
-                <span aria-hidden="true">{agent.name.slice(0, 1)}</span>
+          <Suspense
+            fallback={
+              <div className="scene-loading">
+                Opening the office… Chat and agent controls remain available.
               </div>
-              <div className="selected-agent">
-                <h3>{agent.name}</h3>
-                <p
-                  className={`state-pill ${agent.freshness === "unknown" ? "unknown" : ""}`}
-                >
-                  {connected ? status(agent) : "Unknown"}
-                </p>
-              </div>
-              <p className="agent-description">
-                Your assistant’s conversations, tasks, and requests stay
-                together here.
-              </p>
-              <dl>
-                <div>
-                  <dt>Workspace</dt>
-                  <dd title={agent.workspace}>{agent.workspace}</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>{agent.model}</dd>
-                </div>
-                <div>
-                  <dt>API family</dt>
-                  <dd>
-                    {snapshot.routes.find((r) => r.model === agent.model)
-                      ?.apiFamily ?? "Unverified"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Endpoint</dt>
-                  <dd>http://127.0.0.1:8317/v1</dd>
-                </div>
-                <div>
-                  <dt>Character</dt>
-                  <dd>
-                    {agent.avatarId === "unassigned"
-                      ? "Not assigned yet"
-                      : agent.avatarId}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Workstation</dt>
-                  <dd>{agent.deskId ?? "Not assigned yet"}</dd>
-                </div>
-              </dl>
-              <button
-                className="primary start-button"
-                disabled={
-                  !connected ||
-                  acting ||
-                  ["starting", "ready", "stopping"].includes(agent.lifecycle)
-                }
-                onClick={() => void run("start")}
-              >
-                {agent.lifecycle === "starting"
-                  ? "Starting agent…"
-                  : agent.lifecycle === "ready"
-                    ? "Agent is running"
-                    : "Start agent"}
-              </button>
-              <button
-                className="settings-button"
-                disabled={!connected}
-                onClick={() => setSettingsFor(agent.id)}
-              >
-                Agent settings
-              </button>
-              <p className="lifecycle-note">
-                Interrupt ends a task. Stop closes this agent’s runtime. Closing
-                this tab keeps it running.
-              </p>
-            </section>
-          ) : (
-            <section className="office-welcome">
-              <div className="welcome-mark" aria-hidden="true">
-                ✧
-              </div>
-              <h3>
-                Give your next idea
-                <br />a desk of its own.
-              </h3>
-              <p>
-                Add an assistant, choose its workspace, and start a
-                conversation. You’ll always know when it needs you.
-              </p>
-              <button
-                className="primary"
-                disabled={!connected}
-                onClick={() => dialog.current?.showModal()}
-              >
-                Add your first agent
-              </button>
-            </section>
-          )}
-          {waiting ? (
-            <section className="attention-queue" aria-label="Attention queue">
-              <h3>Waiting for you</h3>
-              {agents
-                .filter((a) => attention(a).length)
-                .map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => {
-                      select(a.id);
-                      setFocusRequest({ id: attention(a)[0].id });
-                    }}
-                  >
-                    <strong>{a.name}</strong>
-                    <span>
-                      {attention(a).length} pending request
-                      {attention(a).length > 1 ? "s" : ""}
-                    </span>
-                    <span aria-hidden="true">↗</span>
-                  </button>
-                ))}
-            </section>
-          ) : (
-            <div className="office-footnote">
-              <span aria-hidden="true">◇</span>
-              <p>Questions and permissions will wait for your answer.</p>
-            </div>
-          )}
+            }
+          >
+            <OfficeScene
+              agents={agents}
+              connected={connected}
+              selected={agent?.id}
+              select={select}
+              focusRequest={(agentId, requestId) => {
+                select(agentId);
+                setFocusRequest({ id: requestId });
+              }}
+            />
+          </Suspense>
         </main>
-        {agent ? (
-          <Chat
-            key={agent.id}
-            agent={agent}
-            connected={connected}
-            run={run}
-            focusRequest={focusRequest}
-          />
-        ) : (
-          <aside className="empty-chat">
-            <span aria-hidden="true">◌</span>
-            <h2>
-              Every good task
-              <br />
-              starts with a conversation.
-            </h2>
-            <p>Your assistant’s chat will appear here.</p>
-          </aside>
-        )}
+        <div
+          role="separator"
+          aria-label="Resize conversation"
+          aria-orientation="vertical"
+          aria-valuemin={320}
+          aria-valuemax={560}
+          aria-valuenow={Math.round(chatWidth)}
+          aria-controls="conversation-panel"
+          tabIndex={0}
+          className="chat-resizer"
+          onPointerDown={(event) => {
+            dragging.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            event.preventDefault();
+          }}
+          onPointerMove={(event) => {
+            if (dragging.current && workspace.current)
+              resizeChat(
+                workspace.current.getBoundingClientRect().right - event.clientX,
+              );
+          }}
+          onPointerUp={() => {
+            dragging.current = false;
+          }}
+          onPointerCancel={() => {
+            dragging.current = false;
+          }}
+          onKeyDown={(event) => {
+            if (
+              ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+            ) {
+              event.preventDefault();
+              resizeChat(
+                event.key === "Home"
+                  ? 320
+                  : event.key === "End"
+                    ? 560
+                    : chatWidth + (event.key === "ArrowLeft" ? 20 : -20),
+              );
+            }
+          }}
+        />
+        <div id="conversation-panel" className="office-conversation">
+          {agent ? (
+            <Chat
+              key={agent.id}
+              agent={agent}
+              connected={connected}
+              run={run}
+              focusRequest={focusRequest}
+              acting={acting}
+              settings={() => setSettingsFor(agent.id)}
+            />
+          ) : (
+            <aside className="empty-chat">
+              <span aria-hidden="true">◌</span>
+              <h2>
+                Every good task
+                <br />
+                starts with a conversation.
+              </h2>
+              <p>Your assistant’s chat will appear here.</p>
+            </aside>
+          )}
+        </div>
       </div>
       {settingsFor ? (
         <SettingsDialog

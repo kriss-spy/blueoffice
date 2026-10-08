@@ -1,0 +1,90 @@
+[
+  {
+    "path": "artifacts/live-office/1280x720-resized.png",
+    "sha256": "bfaa7601f27449d7ff648d4a6c64619bcc03299f12e2a7e93c8d6572093e6e8f"
+  },
+  {
+    "path": "artifacts/live-office/1280x720.png",
+    "sha256": "a81cafb2209b7e0ca5d7de7fbbb28d78de855d5585dbf4ec9bbb501f92b8d638"
+  },
+  {
+    "path": "artifacts/live-office/1440x900-resized.png",
+    "sha256": "d6bf5beaef539e2d1cb2107d2a9073bb04761621fe6b099d62ec3ac9313301ca"
+  },
+  {
+    "path": "artifacts/live-office/1440x900.png",
+    "sha256": "6666b3c26150b2be33976d9269dcf5e5d9dd9634e67e7d8bdbdb8e325291d3c8"
+  },
+  {
+    "path": "artifacts/live-office/completion-cue.png",
+    "sha256": "0a906c27f908ccbda21fc2640bc0bd607126af36d544492a842801d6490dac85"
+  },
+  {
+    "path": "artifacts/live-office/live-completed.png",
+    "sha256": "30dcd634733eb7fe647e211790b99c5b8e0c707d1f130334e75af7ea29dac0fa"
+  },
+  {
+    "path": "artifacts/live-office/live-working.png",
+    "sha256": "cf2f45fc56d5b24a113b59d0fbc7617d11a8ff6e14382e48dc5c9ea8f463e012"
+  },
+  {
+    "path": "artifacts/live-office/missing-assets-after-reload.png",
+    "sha256": "aa26527b615c6be82494a34d24a6728f29f11e158116ea26a1dbd0c28c9180fa"
+  },
+  {
+    "path": "artifacts/live-office/new-turn.png",
+    "sha256": "510dc181b3e81561b310632c0e0a6c6f5753663cd8eeebbac1293c117e4f8fa2"
+  },
+  {
+    "path": "artifacts/live-office/obscured-avatar-attention.png",
+    "sha256": "85f3e51f7ae4d6eb7a4da758ae6ba374eb4bad6372c78c6c7e54568aa3eed7d5"
+  },
+  {
+    "path": "artifacts/live-office/permission.png",
+    "sha256": "aab5f5b0eb7bf40a7287ebeb8b5c719705fba2fa41b14ae14d47d62789e360ed"
+  },
+  {
+    "path": "artifacts/live-office/state-disconnected.png",
+    "sha256": "990ab369eb33e15d2fdc7235ed256f814b0dd1603012194ef84f270c85954fba"
+  },
+  {
+    "path": "artifacts/live-office/state-failed.png",
+    "sha256": "c47d6aa5ac547ad7c210a3f5506c5adbb09cacb078ba52a9c548485dc828239f"
+  },
+  {
+    "path": "artifacts/live-office/state-idle.png",
+    "sha256": "95bfd007292799681bbdc5c8988662df19b0203e3e8f7d18858f0e1e9ddae438"
+  },
+  {
+    "path": "artifacts/live-office/state-interrupted.png",
+    "sha256": "a1aea3eef73fbea0c65fea8f3ba8b4e7f165bcd877b067fcca387c4dd601eb6a"
+  },
+  {
+    "path": "artifacts/live-office/state-quota.png",
+    "sha256": "1487a9b27f221e0f5d19e5225ec8b48ba02dcb8b409f1b61c20ba6b1b4a35d74"
+  },
+  {
+    "path": "artifacts/live-office/state-starting.png",
+    "sha256": "be3d438565ba2936fd36767ec94c2ca2f13d4f507a330907aa13097e8c95d612"
+  },
+  {
+    "path": "artifacts/live-office/state-stopped.png",
+    "sha256": "376bed5e6e6e1074d0f940e7b5de1c7ff185f79853fe9f0fd41f12140676e680"
+  },
+  {
+    "path": "artifacts/live-office/state-stopping.png",
+    "sha256": "51ffcf9f3d9371372b383d25949352f59199982c99b44f2f8f246c2475f6fb71"
+  },
+  {
+    "path": "artifacts/live-office/state-tool.png",
+    "sha256": "edcb1c417d4be80409f60f0594a9d4cc012b637277655796729689d0cdd44a9c"
+  },
+  {
+    "path": "artifacts/live-office/state-unknown.png",
+    "sha256": "75913119a9f716fb56f65778ca92c3ea6c0f755a9bb685f1039a8bcaa514953a"
+  },
+  {
+    "path": "artifacts/live-office/tool-and-question.png",
+    "sha256": "77af9070445e9c917a1275089299b7dbb808f6245cca6756a762590466eed437"
+  }
+]
