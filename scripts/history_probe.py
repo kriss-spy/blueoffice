@@ -26,6 +26,12 @@ def inner(installation):
     db.append_message("stored-cli-different-from-live", "assistant", "Public answer", reasoning="REASONING_SECRET_CANARY", reasoning_content="REASONING_SECRET_CANARY", display_metadata={"password": "METADATA_SECRET_CANARY"}, tool_calls=[{"id": "tool-call-1", "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": "echo notes TOKEN=ARG_SECRET_CANARY"})}}])
     db.append_message("stored-cli-different-from-live", "tool", "TOOL_RESULT_SECRET_CANARY", tool_name="terminal", tool_call_id="tool-call-1")
     db.append_message("stored-cli-different-from-live", "user", "HIDDEN_ROW_CANARY", display_kind="hidden")
+    # Exercise the installed background usage writer, not hand-shaped cost rows.
+    db.update_token_counts("stored-cli-different-from-live", input_tokens=20,
+        output_tokens=10, api_call_count=1, estimated_cost_usd=None,
+        actual_cost_usd=None, cost_status="unknown", cost_source="none")
+    db.update_token_counts("stored-cron", api_call_count=1, actual_cost_usd=0,
+        cost_status="actual", cost_source="provider")
     db.close()
     path = root / "state.db"
     before = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -38,14 +44,18 @@ def inner(installation):
     assert result["tools"][0]["id"] == "tool-call-1", result
     assert result["tools"][0]["name"] == "terminal"
     assert result["tools"][0]["outcome"] == "unknown"
+    assert result["records"][0]["metrics"]["calls"] == 1
     assert result["records"][0]["metrics"]["costUsd"] is None
+    assert result["records"][0]["metrics"]["costKind"] is None
+    actual_cost = read(root, "stored-cron", installation["source"])["records"][0]["metrics"]
+    assert actual_cost["costUsd"] == 0 and actual_cost["costKind"] == "actual", actual_cost
     assert {row["source"] for row in read(root, None, installation["source"])["records"]} == {"cli", "cron"}
     assert read(root, "stored-cli", installation["source"])["records"] == [], "prefix must not resolve"
     assert read(root, "foreign-owner-row", installation["source"])["records"] == [], "foreign profile row must not be served"
     request = subprocess.run([installation["python"], "-B", "-I", "/probe/history_reader.py", installation["source"], str(root), installation["revision"]], input=json.dumps({"profileHome": str(root), "storedSessionId": "stored-cli-different-from-live"}), capture_output=True, text=True, check=True)
     assert json.loads(request.stdout)["messages"] == result["messages"], request.stdout
     assert before == hashlib.sha256(path.read_bytes()).hexdigest(), "history database changed"
-    report = {"passed": True, "hermesRevision": installation["revision"], "schema": 30, "isolated": True, "providerCalls": 0, "databaseUnchanged": True, "checks": ["CLI and cron source visibility", "exact stored id", "public native projection", "system/reasoning/hidden/tool payload redaction", "unknown tool outcome", "unavailable cost", "read-only database"]}
+    report = {"passed": True, "hermesRevision": installation["revision"], "schema": 30, "isolated": True, "providerCalls": 0, "databaseUnchanged": True, "checks": ["CLI and cron source visibility", "exact stored id", "public native projection", "system/reasoning/hidden/tool payload redaction", "unknown tool outcome", "native usage-writer unknown price remains unavailable", "evidenced actual zero cost", "read-only database"]}
     Path("/evidence/report.json").write_text(json.dumps(report, indent=2) + "\n")
     Path("/evidence/public-detail.json").write_text(json.dumps(result, indent=2) + "\n")
 

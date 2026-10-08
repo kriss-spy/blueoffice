@@ -1,4 +1,11 @@
-import { test, expect, createAgent, snapshot, frames } from "./fixtures.js";
+import {
+  test,
+  expect,
+  createAgent,
+  snapshot,
+  frames,
+  send,
+} from "./fixtures.js";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { writeFile } from "node:fs/promises";
@@ -238,5 +245,47 @@ test("streamed message revisions do not repeatedly read all native history profi
   expect(listRequests - before).toBeLessThanOrEqual(3);
   await expect(
     activity.getByText("Find the cobalt notebook", { exact: true }),
+  ).toBeVisible();
+});
+
+test("pinned owned history metadata follows another tab's question and stop without replacing inspection", async ({
+  page,
+  office,
+  context,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  const owner = (await snapshot(page)).agents[0];
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  const activity = page.getByRole("region", { name: "Activity", exact: true });
+  const owned = activity.getByRole("button", { name: /Hina conversation/ });
+  await owned.click();
+  const detail = activity.getByRole("region", { name: "History inspection" });
+  await expect(
+    detail.getByText("Owned · Ready · blueoffice", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    detail.getByText("No public messages are available.", { exact: true }),
+  ).toBeVisible();
+  const other = await context.newPage();
+  await other.goto(office.url);
+  await send(other, "Hina", "question");
+  await expect(
+    detail.getByText("Owned · Needs an answer · blueoffice", { exact: true }),
+  ).toBeVisible();
+  await expect(owned).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.getByText("No public messages are available.", { exact: true }),
+  ).toBeVisible();
+  await other.getByRole("button", { name: "Stop agent", exact: true }).click();
+  await expect(
+    detail.getByText("Owned · Unknown outcome · blueoffice", { exact: true }),
+  ).toBeVisible();
+  await expect(owned).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    detail.getByText(owner.storedSessionId!, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    detail.getByText("No public messages are available.", { exact: true }),
   ).toBeVisible();
 });

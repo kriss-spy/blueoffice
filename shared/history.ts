@@ -34,7 +34,7 @@ export interface HistoryMetrics {
   outputTokens: number | null;
   calls: number | null;
   costUsd: number | null;
-  costKind: "actual" | "estimated" | null;
+  costKind: "actual" | "estimated" | "included" | null;
 }
 export interface HistoryRecord {
   storedSessionId: string;

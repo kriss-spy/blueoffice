@@ -16,7 +16,7 @@ const record = z.object({
     outputTokens: metric,
     calls: metric,
     costUsd: metric,
-    costKind: z.enum(["actual", "estimated"]).nullable(),
+    costKind: z.enum(["actual", "estimated", "included"]).nullable(),
   }),
 });
 export const historyReadSchema = z.object({

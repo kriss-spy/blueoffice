@@ -43,10 +43,21 @@ def number(value):
 
 def record(row):
     actual, estimated = number(row.get("actual_cost_usd")), number(row.get("estimated_cost_usd"))
+    # Native usage updates coalesce an absent estimate to zero. Only typed,
+    # sourced cost evidence establishes a measurement; numeric presence does not.
+    status, source = row.get("cost_status"), row.get("cost_source")
+    sourced = isinstance(source, str) and source not in ("", "none", "unknown")
+    cost, kind = None, None
+    if status == "actual" and sourced and actual is not None:
+        cost, kind = actual, "actual"
+    elif status == "estimated" and sourced and estimated is not None:
+        cost, kind = estimated, "estimated"
+    elif status == "included" and source == "none" and estimated == 0:
+        cost, kind = 0, "included"
     # Schema defaults are not measurements; calls must establish usage exists.
     measured = number(row.get("api_call_count")) not in (None, 0)
     return {"storedSessionId": row["id"], "title": safe(row.get("title"), 300), "source": safe(row.get("source"), 100) or "unknown", "startedAt": timestamp(row.get("started_at")), "lastActivityAt": timestamp(row.get("last_activity_at")) or timestamp(row.get("started_at")), "endedAt": timestamp(row.get("ended_at")), "endReason": safe(row.get("end_reason"), 100) or None, "parentStoredSessionId": None,
-            "metrics": {"inputTokens": number(row.get("input_tokens")) if measured else None, "outputTokens": number(row.get("output_tokens")) if measured else None, "calls": number(row.get("api_call_count")) if measured else None, "costUsd": actual if actual is not None else estimated, "costKind": "actual" if actual is not None else "estimated" if estimated is not None else None}}
+            "metrics": {"inputTokens": number(row.get("input_tokens")) if measured else None, "outputTokens": number(row.get("output_tokens")) if measured else None, "calls": number(row.get("api_call_count")) if measured else None, "costUsd": cost, "costKind": kind}}
 
 
 def profiles(root, source):
@@ -88,7 +99,7 @@ def read(home, stored_id, source):
         if not version or version[0] != SCHEMA:
             raise ValueError("History schema is unsupported; run the compatibility probe")
         # Never use title/prefix/resume-chain resolution: inspection addresses the exact stored id.
-        sql = "SELECT id,title,source,started_at,last_activity_at,ended_at,end_reason,input_tokens,output_tokens,api_call_count,actual_cost_usd,estimated_cost_usd FROM sessions"
+        sql = "SELECT id,title,source,started_at,last_activity_at,ended_at,end_reason,input_tokens,output_tokens,api_call_count,actual_cost_usd,estimated_cost_usd,cost_status,cost_source FROM sessions"
         owner = home.name if home.parent.name == "profiles" else "default"
         params = (owner, stored_id, LIMIT + 1) if stored_id else (owner, LIMIT + 1)
         rows = conn.execute(sql + " WHERE (profile_name IS NULL OR profile_name=?)" + (" AND id=?" if stored_id else "") + " ORDER BY COALESCE(last_activity_at,started_at) DESC LIMIT ?", params).fetchall()

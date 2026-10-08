@@ -36,6 +36,7 @@ export function Activity({
   const [detail, setDetail] = useState<HistoryDetail | null>(null);
   const [error, setError] = useState("");
   const [detailError, setDetailError] = useState("");
+  const detailLoadKey = useRef("");
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
   const [knownSources, setKnownSources] = useState<string[]>([]);
@@ -118,13 +119,22 @@ export function Activity({
       return;
     }
     const controller = new AbortController();
-    setDetail(null);
+    const selectionKey = JSON.stringify([selected, refresh]);
+    const reloadTranscript = detailLoadKey.current !== selectionKey;
+    detailLoadKey.current = selectionKey;
+    setDetail((current) => (current?.session.id === selected ? current : null));
     setDetailError("");
     read<HistoryDetail>(
       `/api/history/${encodeURIComponent(selected)}`,
       controller.signal,
     )
-      .then(setDetail)
+      .then((next) =>
+        setDetail((current) =>
+          !reloadTranscript && current?.session.id === selected
+            ? { ...current, session: next.session, controls: next.controls }
+            : next,
+        ),
+      )
       .catch((cause) => {
         if (!controller.signal.aborted)
           setDetailError(
@@ -134,7 +144,7 @@ export function Activity({
           );
       });
     return () => controller.abort();
-  }, [selected, refresh]);
+  }, [selected, refresh, historyKey, connected]);
   const filter = <K extends keyof HistoryQuery>(
     field: K,
     next: HistoryQuery[K],

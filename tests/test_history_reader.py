@@ -43,8 +43,19 @@ class HistoryReaderTests(unittest.TestCase):
         metrics = reader.record(row)["metrics"]
         self.assertEqual(metrics["inputTokens"], None)
         self.assertEqual(metrics["costUsd"], None)
-        row.update(api_call_count=1, actual_cost_usd=0)
+        row.update(api_call_count=1, actual_cost_usd=0, cost_status="actual", cost_source="provider")
         self.assertEqual(reader.record(row)["metrics"]["costUsd"], 0)
+
+    def test_absent_price_coalesced_to_zero_is_not_an_estimate(self):
+        row = {"id": "unknown-cost", "api_call_count": 1, "estimated_cost_usd": 0,
+               "actual_cost_usd": None, "cost_status": "unknown", "cost_source": "none"}
+        self.assertEqual(reader.record(row)["metrics"]["costUsd"], None)
+        self.assertEqual(reader.record(row)["metrics"]["costKind"], None)
+        row.update(cost_status="estimated", cost_source="provider")
+        self.assertEqual(reader.record(row)["metrics"]["costUsd"], 0)
+        self.assertEqual(reader.record(row)["metrics"]["costKind"], "estimated")
+        row.update(cost_status="included", cost_source="none")
+        self.assertEqual(reader.record(row)["metrics"]["costKind"], "included")
 
 
 if __name__ == "__main__":
