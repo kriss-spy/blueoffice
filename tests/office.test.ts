@@ -1,6 +1,6 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -311,6 +311,10 @@ test("lost admission is unknown and a duplicate command never resubmits it", asy
     (await office.prompt(agent.id, cid, binding, "slow task")).state,
     "unknown",
   );
+  await office.reconcileAll();
+  assert.equal(current().freshness, "current");
+  assert.equal(current().busy, true);
+  assert.equal(current().receipts.find((r) => r.id === cid)!.state, "unknown");
   const log = (
     await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
   )
@@ -364,7 +368,9 @@ test("recovery marks unresolved work unknown and never signals or adopts a previ
     record.requests[0].id,
   );
   assert.equal(recovered.snapshot().agents[0].epoch, record.epoch);
-  assert.equal(current().lifecycle, "ready");
+  // The committed checkpoint now reflects the new supervisor. The original
+  // child is still owned by its live handle, as a successful interrupt proves.
+  await office.interrupt(agent.id, target());
   await office.stop(agent.id);
   await recovered.start(agent.id);
   assert.equal(recovered.snapshot().agents[0].lifecycle, "ready");
@@ -921,3 +927,150 @@ test("supervisor recovery retains an admitted permission decision with unknown d
     0,
   );
 });
+
+test("native recovery reorders missing chunks before redaction and never duplicates replayed text", async (t) => {
+  const { office, agent, current, target, factory } = await setup(
+    t,
+    "replay-order",
+  );
+  const launch = factory.launch.bind(factory);
+  factory.launch = async (agent) => {
+    const result = await launch(agent);
+    result.options.env!.BLUEOFFICE_PROXY_KEY = "synthetic-review-key";
+    return result;
+  };
+  const snapshots: string[] = [];
+  office.on("change", () => snapshots.push(JSON.stringify(office.snapshot())));
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "replay chunks");
+  await until(() => current().work === "completed" && !current().busy);
+  await office.reconcileAll();
+  assert.equal(
+    current()
+      .messages.filter((m) => m.role === "assistant")
+      .map((m) => m.text)
+      .join(""),
+    "Safe prefix [redacted] done synt",
+  );
+  for (const snapshot of snapshots)
+    assert.doesNotMatch(
+      snapshot,
+      /synthetic-review|synthetic-|HIDDEN_REASONING_CANARY|PRIVATE_SYSTEM_CANARY/,
+    );
+  assert.equal(current().freshness, "current");
+});
+
+for (const scenario of ["missing-request", "truncated", "interim-gap"]) {
+  test(`native ${scenario} recovery restores the exact waiting permission without invented completion`, async (t) => {
+    const { office, agent, current, target, directory } = await setup(
+      t,
+      scenario,
+    );
+    await office.start(agent.id);
+    await office.prompt(agent.id, randomUUID(), target(), "ask approval");
+    await delay(120);
+    const started = performance.now();
+    await office.reconcileAll();
+    assert.ok(performance.now() - started < 3000);
+    const request = attention(current())[0];
+    assert.ok(request);
+    assert.equal(request.frameId, "srq-1");
+    assert.equal(request.innerId, "inner-permission");
+    assert.equal(request.freshness, "current");
+    assert.equal(current().busy, true);
+    assert.notEqual(current().work, "completed");
+    assert.equal(current().messages.filter((m) => m.role === "user").length, 1);
+    const stable = JSON.stringify(request);
+    await office.reconcileAll();
+    assert.equal(JSON.stringify(attention(current())[0]), stable);
+    assert.notEqual(
+      current().work,
+      "completed",
+      "A complete interim segment is not a terminal turn outcome",
+    );
+    if (scenario === "interim-gap") {
+      assert.equal(
+        current().messages.find((m) => m.role === "assistant")!.state,
+        "complete",
+      );
+      assert.equal(current().work, "unknown");
+      assert.equal(current().terminal, undefined);
+    }
+    await office.reply(agent.id, request.id, randomUUID(), target(), {
+      choice: "deny",
+    });
+    await until(() => !attention(current()).length);
+    const frames = (
+      await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(frames.filter((f) => f.method === "prompt.submit").length, 1);
+    assert.equal(
+      frames.filter((f) => !f.method && f.id === request.frameId).length,
+      1,
+    );
+    assert.equal(current().workspace, directory);
+  });
+}
+
+for (const scenario of [
+  "checkpoint-stream",
+  "checkpoint-tool-prefix",
+  "checkpoint-tool",
+])
+  test(`${scenario} preserves sealed segments and redaction through a truncated checkpoint`, async (t) => {
+    const { office, agent, current, target, factory, store } = await setup(
+      t,
+      scenario,
+    );
+    const launch = factory.launch.bind(factory);
+    factory.launch = async (agent) => {
+      const result = await launch(agent);
+      result.options.env!.BLUEOFFICE_PROXY_KEY = "synthetic-review-key";
+      return result;
+    };
+    const published: string[] = [];
+    office.on("change", () => {
+      const snapshot = office.snapshot();
+      published.push(JSON.stringify(snapshot));
+      published.push(
+        JSON.stringify(store.since(Math.max(0, snapshot.revision - 1))),
+      );
+    });
+    await office.start(agent.id);
+    await office.prompt(
+      agent.id,
+      randomUUID(),
+      target(),
+      "stream across checkpoint",
+    );
+    await until(
+      () => current().work === "unknown" && current().freshness === "current",
+    );
+    const before = current().messages.filter((m) => m.role === "assistant");
+    const partial = before.at(-1)!;
+    assert.equal(before.length, scenario === "checkpoint-tool-prefix" ? 2 : 1);
+    assert.equal(
+      partial.text,
+      scenario === "checkpoint-tool" ? "Checking the files." : "Hello ",
+    );
+    if (scenario === "checkpoint-tool")
+      assert.equal(current().activeMessageId, null);
+    else assert.equal(current().activeMessageId, partial.id);
+    await writeFile(join(agent.profileHome, "continue-recovery"), "continue");
+    await until(() => current().work === "completed" && !current().busy);
+    const answers = current().messages.filter((m) => m.role === "assistant");
+    assert.equal(answers.length, scenario === "checkpoint-stream" ? 1 : 2);
+    if (scenario !== "checkpoint-tool")
+      assert.equal(answers.at(-1)!.id, partial.id);
+    assert.equal(
+      answers.at(-1)!.text,
+      scenario === "checkpoint-tool" ? "Done." : "Hello [redacted] world",
+    );
+    if (scenario !== "checkpoint-stream")
+      assert.equal(answers[0].text, "Checking the files.");
+    for (const value of published)
+      assert.doesNotMatch(value, /synthetic-|review-key/);
+  });

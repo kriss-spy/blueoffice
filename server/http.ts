@@ -74,29 +74,47 @@ async function body(req: IncomingMessage): Promise<unknown> {
 
 export function officeServer(office: Office, assets = resolve("dist")) {
   const sessions = new Map<string, string>();
-  const clients = new Set<ServerResponse>();
+  const clients = new Map<
+    ServerResponse,
+    { revision: number; journalId: string }
+  >();
   let timer: NodeJS.Timeout | undefined;
   const broadcast = () => {
     if (timer) return;
     timer = setTimeout(() => {
       timer = undefined;
-      const snapshot = office.snapshot();
-      for (const response of clients) {
-        // Slow clients reconnect to a complete snapshot; never grow an unbounded socket buffer.
+      for (const [response, cursor] of clients) {
         if (response.writableLength > 1_000_000) {
           response.end();
           clients.delete(response);
           continue;
         }
-        response.write(
-          `id: ${snapshot.revision}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
-        );
+        sendUpdates(response, cursor);
       }
     }, 25);
   };
   office.on("change", broadcast);
+  const sendUpdates = (
+    response: ServerResponse,
+    cursor: { revision: number; journalId: string },
+  ) => {
+    const replay = office.eventsSince(cursor.revision, cursor.journalId);
+    if (replay) {
+      response.write(
+        `id: ${replay.journalId}:${replay.to}\nevent: updates\ndata: ${JSON.stringify(replay)}\n\n`,
+      );
+      cursor.revision = replay.to;
+    } else {
+      const snapshot = office.snapshot();
+      response.write(
+        `id: ${snapshot.journalId}:${snapshot.revision}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
+      );
+      cursor.revision = snapshot.revision;
+      cursor.journalId = snapshot.journalId!;
+    }
+  };
   const heartbeat = setInterval(() => {
-    for (const client of clients) client.write(": connected\n\n");
+    for (const client of clients.keys()) client.write(": connected\n\n");
   }, 15_000);
   heartbeat.unref();
   const server = createServer(async (req, res) => {
@@ -142,6 +160,7 @@ export function officeServer(office: Office, assets = resolve("dist")) {
             `blueoffice=${token}; HttpOnly; SameSite=Strict; Path=/`,
           );
         }
+        await office.reconcileAll();
         send(res, 200, { csrf, snapshot: office.snapshot() });
         return;
       }
@@ -166,11 +185,14 @@ export function officeServer(office: Office, assets = resolve("dist")) {
             "Cache-Control": "no-store",
             Connection: "keep-alive",
           });
-          const snapshot = office.snapshot();
-          res.write(
-            `id: ${snapshot.revision}\nevent: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
-          );
-          clients.add(res);
+          const resume = String(req.headers["last-event-id"] ?? "").split(":");
+          const cursor = {
+            revision: Number(resume[1] ?? url.searchParams.get("since") ?? -1),
+            journalId: resume[0] || url.searchParams.get("journal") || "",
+          };
+          res.write("retry: 500\n");
+          sendUpdates(res, cursor);
+          clients.set(res, cursor);
           res.on("close", () => clients.delete(res));
           return;
         }
@@ -361,7 +383,7 @@ export function officeServer(office: Office, assets = resolve("dist")) {
         server.close(() => resolve()),
       );
       await office.shutdown();
-      for (const client of clients) client.end();
+      for (const client of clients.keys()) client.end();
       clients.clear();
       // A client with an unfinished upload must not hold the supervisor open.
       server.closeAllConnections();

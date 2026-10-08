@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Snapshot } from "../shared/office";
 import { attention, status } from "../shared/office";
-import { command, session } from "./api";
+import { command, connectOffice } from "./api";
 import { Chat } from "./Chat";
 import { SettingsDialog } from "./SettingsDialog";
 
@@ -27,29 +27,7 @@ export function App() {
   const dialog = useRef<HTMLDialogElement>(null);
   const agents = snapshot.agents;
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
-  useEffect(() => {
-    let disposed = false,
-      stream: EventSource | undefined;
-    void session()
-      .then((initial) => {
-        if (disposed) return;
-        setSnapshot(initial);
-        stream = new EventSource("/api/events");
-        stream.addEventListener("snapshot", (event) => {
-          const next = JSON.parse((event as MessageEvent).data) as Snapshot;
-          setSnapshot((current) =>
-            next.revision >= current.revision ? next : current,
-          );
-          setConnected(true);
-        });
-        stream.onerror = () => setConnected(false);
-      })
-      .catch((err) => setError(err.message));
-    return () => {
-      disposed = true;
-      stream?.close();
-    };
-  }, []);
+  useEffect(() => connectOffice(setSnapshot, setConnected, setError), []);
   const select = (id: string) => {
     setSelected(id);
     localStorage.setItem("blueoffice.selected.v1", id);

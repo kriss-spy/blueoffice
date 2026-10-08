@@ -21,6 +21,7 @@ export interface Receipt {
   at: string;
 }
 export interface ChatItem {
+  streamed?: boolean;
   id: string;
   epoch: string;
   turnId: string;
@@ -69,6 +70,13 @@ export interface Conversation {
   createdAt: string;
 }
 export interface OfficeAgent {
+  activeMessageId?: string | null;
+  replay?: { epoch: string; sequence: number };
+  terminal?: {
+    epoch: string;
+    turnId: string;
+    outcome: "completed" | "interrupted" | "failed" | "unknown";
+  };
   settingsVersion?: number;
   configRevision?: string;
   configHistory?: {
@@ -103,6 +111,7 @@ export interface OfficeAgent {
   createdAt: string;
 }
 export interface Snapshot {
+  journalId?: string;
   pendingAdoptions?: { name: string; profileHome: string }[];
   routes: RouteStatus[];
   revision: number;

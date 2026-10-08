@@ -81,6 +81,13 @@ try {
   );
   assert.equal(current().requests.at(-1)!.questions[0].state, "locked");
   assert.equal(store.agents()[0].requests.at(-1)!.questions[0].answer, "Birch");
+  await office.reconcileAll();
+  assert.equal(attention(current())[0].id, batch.id);
+  assert.equal(attention(current())[0].questions[0].state, "locked");
+  assert.equal(attention(current())[0].questions[0].answer, "Birch");
+  checks.push(
+    "native events-since/open-requests reconciliation retains exact batch and confirmed lock",
+  );
   await office.reply(created.id, batch.id, randomUUID(), target(), {
     answers: { [batch.questions[1].qid]: JSON.stringify(["Blue", "White"]) },
   });
@@ -136,6 +143,18 @@ try {
     "Native approval context must redact a credential-shaped canary",
   );
   assert.match(permission.text, /blueoffice-approval-sentinel/);
+  const recoveryStarted = performance.now();
+  await office.reconcileAll();
+  const recoveryMs = performance.now() - recoveryStarted;
+  assert.ok(recoveryMs < 3000);
+  assert.equal(attention(current())[0].id, permission.id);
+  assert.equal(attention(current())[0].innerId, permission.innerId);
+  assert.equal(attention(current())[0].freshness, "current");
+  assert.equal(current().freshness, "current");
+  assert.ok(current().replay?.epoch);
+  checks.push(
+    `native pending approval reconciled in ${Math.round(recoveryMs)}ms, same exact request remains answerable`,
+  );
   await office.reply(created.id, permission.id, randomUUID(), target(), {
     choice: "deny",
   });
