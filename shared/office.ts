@@ -69,6 +69,7 @@ export interface Conversation {
   createdAt: string;
 }
 export interface OfficeAgent {
+  activeMessageId?: string | null;
   replay?: { epoch: string; sequence: number };
   terminal?: {
     epoch: string;

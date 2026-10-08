@@ -37,6 +37,7 @@ busy = False
 requests = {}
 replay_events = []
 history = []
+inflight = None
 omitted_delta = False
 truncated_through = 0
 write_lock = threading.Lock()
@@ -54,9 +55,11 @@ def event(kind, payload=None):
         seq += 1
         data = {"type": kind, "session_id": session, "seq": seq, "payload": payload or {}}
         replay_events.append(data)
+        if scenario == "checkpoint-stream" and kind == "message.delta" and payload.get("checkpoint_omit"):
+            return
         if scenario in ("truncated", "interim-gap") and busy and kind not in ("recovery.trigger", "message.interim"):
             return
-        if scenario in ("truncated", "interim-gap") and kind == "recovery.trigger":
+        if scenario in ("truncated", "interim-gap", "checkpoint-stream") and kind == "recovery.trigger":
             truncated_through = seq - 1
             replay_events[:] = [data]
         if scenario == "replay-order" and kind == "message.delta" and not omitted_delta:
@@ -81,7 +84,7 @@ def finish(generation):
 
 
 def task(prompt, generation):
-    global busy
+    global busy, inflight
     if scenario == "interim-gap":
         event("message.interim", {"text": "I will wait for permission before continuing.", "already_streamed": False})
     event("thinking.delta", {"text": "HIDDEN_REASONING_CANARY"})
@@ -91,6 +94,21 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
+    if scenario == "checkpoint-stream":
+        key = os.environ["BLUEOFFICE_PROXY_KEY"]
+        event("message.delta", {"text": "Hello "})
+        inflight = {"user": prompt, "assistant": "Hello " + key[:10], "streaming": True}
+        event("message.delta", {"text": key[:10], "checkpoint_omit": True})
+        event("recovery.trigger")
+        deadline = time.monotonic() + 10
+        while not (profile / "continue-recovery").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        event("message.delta", {"text": key[10:] + " world"})
+        event("message.complete", {"text": "Hello " + key + " world", "status": "complete"})
+        inflight = None
+        busy = False
+        event("session.info", {"running": False})
+        return
     if scenario in ("split-credential", "replay-order"):
         key = os.environ["BLUEOFFICE_PROXY_KEY"]
         for part in ("Safe prefix ", key[:10], key[10:14], key[14:], " done ", "synt"):
@@ -199,7 +217,7 @@ for line in sys.stdin:
     if method == "session.create":
         result = {"session_id": session, "stored_session_id": "stored-" + session}
     elif method == "session.activate":
-        result = {"session_id": session, "running": busy, "open_requests": list(requests.values()), "messages": history, "messages_omitted": False}
+        result = {"session_id": session, "running": busy, "open_requests": list(requests.values()), "messages": history, "messages_omitted": False, "inflight": inflight}
         time.sleep(0.05)  # Response can arrive after a newer settled session.info.
     elif method == "session.events.since":
         result = {"open_requests": list(requests.values()), "events": [e for e in replay_events if e["seq"] > params.get("last_seen", 0)], "epoch": "fixture-epoch", "latest_seq": seq, "truncated": params.get("last_seen", 0) < truncated_through}

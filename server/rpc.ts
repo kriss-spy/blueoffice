@@ -224,8 +224,10 @@ export class RpcChild extends EventEmitter {
     }
     return replay;
   }
+  prepareCheckpoint(session: string, snapshot: Record<string, unknown>) {
+    this.redactor.checkpoint(session, snapshot);
+  }
   checkpoint(session: string, sequence: number) {
-    this.redactor.reset(session);
     for (const frame of this.sequence.checkpoint(session, sequence))
       this.publish(frame);
   }

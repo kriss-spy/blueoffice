@@ -1033,6 +1033,12 @@ export class Office extends EventEmitter {
         }
         if (!snapshot)
           throw new Error("Native snapshot changed during recovery.");
+        if (
+          !Array.isArray(snapshot.messages) ||
+          snapshot.messages_omitted === true
+        )
+          throw new Error("Native checkpoint omitted public history.");
+        rpc.prepareCheckpoint(session, snapshot);
         recoverHistory(agent, snapshot);
         agent.work = "unknown";
         agent.busy = snapshot.running === true;
@@ -1123,7 +1129,8 @@ export class Office extends EventEmitter {
     const id = `assistant:${agent.turnId}:${segments.length}`;
     let message = forceNew
       ? undefined
-      : segments.find((m) => m.state === "streaming");
+      : (segments.find((m) => m.id === agent.activeMessageId) ??
+        segments.find((m) => m.state === "streaming"));
     if (!message) {
       message = {
         id,
@@ -1137,6 +1144,7 @@ export class Office extends EventEmitter {
       };
       agent.messages.push(message);
     }
+    agent.activeMessageId = message.id;
     return message;
   }
   private frame(agent: OfficeAgent, rpc: RpcChild, frame: Frame) {
@@ -1218,6 +1226,7 @@ export class Office extends EventEmitter {
         );
         message.text = text(payload.text, Infinity) || message.text;
         message.state = "complete";
+        agent.activeMessageId = null;
         message.chunkIds.push(key);
         break;
       }
@@ -1237,6 +1246,7 @@ export class Office extends EventEmitter {
         message.text = text(payload.text, Infinity) || message.text;
         message.chunkIds.push(key);
         message.state = outcome === "completed" ? "complete" : outcome;
+        agent.activeMessageId = null;
         for (const tool of agent.messages.filter(
           (m) =>
             m.turnId === agent.turnId &&

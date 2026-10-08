@@ -20,13 +20,21 @@ export function recoverHistory(
     const tail = lastUser >= 0 ? rows.slice(lastUser) : [];
     for (const role of ["user", "assistant"] as const) {
       const content = inflight[role];
+      const active =
+        role === "assistant" && snapshot.running === true && !inflight.error;
       if (
-        typeof content === "string" &&
-        content &&
-        !(role === "assistant" && inflight.error) &&
-        !tail.some((row) => row?.role === role && row.text === content)
+        typeof content !== "string" ||
+        (!content && !active) ||
+        (role === "assistant" && inflight.error)
       )
-        rows.push({ role, text: content });
+        continue;
+      const matching = tail.find(
+        (row) => row?.role === role && row.text === content,
+      );
+      if (matching) {
+        if (active)
+          rows[rows.indexOf(matching)] = { ...matching, recoveryActive: true };
+      } else rows.push({ role, text: content, recoveryActive: active });
     }
   }
   for (const value of rows) {
@@ -37,14 +45,21 @@ export function recoverHistory(
       typeof row.text !== "string"
     )
       continue;
-    const old = previous
-      .slice(index)
-      .find(
-        (m) =>
-          m.role === row.role &&
-          (m.text === row.text ||
-            (m.state === "streaming" && String(row.text).startsWith(m.text))),
-      );
+    const active = row.recoveryActive === true;
+    const old =
+      (active
+        ? previous.find(
+            (m) => m.id === agent.activeMessageId && m.turnId === agent.turnId,
+          )
+        : undefined) ??
+      previous
+        .slice(index)
+        .find(
+          (m) =>
+            m.role === row.role &&
+            (m.text === row.text ||
+              (m.state === "streaming" && String(row.text).startsWith(m.text))),
+        );
     if (old) {
       used.add(old.id);
       index = previous.indexOf(old) + 1;
@@ -54,7 +69,9 @@ export function recoverHistory(
         old?.id ??
         `recovered:${agent.epoch}:${recovered.length}:${String(row.row_id ?? "row")}`,
       epoch: agent.epoch!,
-      turnId: old?.turnId ?? `recovered:${agent.epoch}`,
+      turnId:
+        old?.turnId ??
+        (active && agent.turnId ? agent.turnId : `recovered:${agent.epoch}`),
       role: row.role as "user" | "assistant",
       text: row.text,
       // Historical text proves content, not a missing terminal outcome.
@@ -65,6 +82,7 @@ export function recoverHistory(
       at: old?.at ?? new Date().toISOString(),
       chunkIds: old?.chunkIds ?? [],
     });
+    if (active) agent.activeMessageId = recovered.at(-1)!.id;
   }
   // An unacknowledged user message or streaming tail may not have reached native history yet.
   for (const message of previous)
