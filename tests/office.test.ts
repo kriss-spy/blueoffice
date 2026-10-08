@@ -600,3 +600,15 @@ test("one agent's clarification never changes another waiting agent or accepts a
   await until(() => current().work === "completed");
   assert.deepEqual(otherCurrent(), untouched);
 });
+
+test("native-shaped cancellation replay wins over absent delivered request", async (t) => {
+  const { office, agent, current, target } = await setup(t, "replay-cancel");
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "ask question");
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0];
+  await office.reply(agent.id, r.id, randomUUID(), target(), { answer: "Oak" });
+  assert.equal(current().requests[0].state, "expired");
+  assert.equal(current().requests[0].reason, "timeout");
+  assert.equal(attention(current()).length, 0);
+});

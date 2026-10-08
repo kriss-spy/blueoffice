@@ -27,6 +27,7 @@ session = "live-fixture-" + uuid.uuid4().hex[:8]
 seq = 0
 busy = False
 requests = {}
+replay_events = []
 write_lock = threading.Lock()
 cancel_generation = 0
 
@@ -136,6 +137,12 @@ for line in sys.stdin:
         log.write(json.dumps(frame) + "\n")
     if not method:
         if rid in requests:
+            if scenario == "replay-cancel":
+                requests.pop(rid)
+                seq += 1
+                replay_events.append({"type": "request.cancel", "session_id": session, "seq": seq,
+                                      "payload": {"id": rid, "reason": "timeout"}})
+                continue
             def resolve(request_id, generation):
                 if scenario == "delayed-answer":
                     time.sleep(0.4)
@@ -150,7 +157,7 @@ for line in sys.stdin:
         result = {"running": busy, "open_requests": list(requests.values())}
         time.sleep(0.05)  # Response can arrive after a newer settled session.info.
     elif method == "session.events.since":
-        result = {"open_requests": list(requests.values()), "events": [], "epoch": "fixture-epoch", "latest_seq": seq}
+        result = {"open_requests": list(requests.values()), "events": replay_events, "epoch": "fixture-epoch", "latest_seq": seq}
     elif method == "clarify.lock":
         request = requests.get(params["request_id"])
         if not request:

@@ -917,16 +917,25 @@ export class Office extends EventEmitter {
     );
     const replay = await rpc.request<{
       open_requests: Frame[];
-      events?: Frame[];
+      events?: Record<string, unknown>[];
     }>("session.events.since", { session_id: agent.liveSessionId });
     if (
       this.runtimes.get(agent.id) !== rpc ||
       !Array.isArray(replay.open_requests)
     )
       return;
-    for (const frame of replay.events ?? [])
-      if (frame.method === "event" && frame.params?.type === "request.cancel")
-        this.frame(agent, rpc, frame);
+    // Native replay contains event payload envelopes, not live JSON-RPC frames.
+    for (const event of Array.isArray(replay.events) ? replay.events : [])
+      if (
+        event &&
+        event.type === "request.cancel" &&
+        event.session_id === agent.liveSessionId
+      )
+        this.frame(agent, rpc, {
+          jsonrpc: "2.0",
+          method: "event",
+          params: event,
+        });
     for (const request of agent.requests)
       if (
         delivered.has(request.id) &&
