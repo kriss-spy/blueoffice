@@ -173,6 +173,8 @@ class Settings:
         if request.get("expectedRevision") != revision(self.home):
             raise ProfileError("Profile changed outside this editor. Reload and review before saving.")
         config = self.config()
+        soul_path = self.home / "SOUL.md"
+        original_soul = soul_path.read_bytes() if soul_path.exists() else None
         wanted = copy.deepcopy(config)
         routing = request["routing"]
         deep_merge(wanted, routing)
@@ -207,9 +209,13 @@ class Settings:
             for field in ("workspace", "model", "toolsets", "approvalMode"):
                 sections[field] = {"applied": False, "message": "Configuration save could not be verified. Reload before retrying."}
         try:
-            atomic_write(self.home / "SOUL.md", values["soul"].encode())
-            matched = (self.home / "SOUL.md").read_text() == values["soul"]
-            sections["soul"] = {"applied": matched, "message": "Saved; applies at next start." if matched else "Persona readback differs."}
+            current_soul = soul_path.read_bytes() if soul_path.exists() else None
+            if current_soul != original_soul:
+                sections["soul"] = {"applied": False, "message": "Persona changed during configuration save. Reload and review it before retrying."}
+            else:
+                atomic_write(soul_path, values["soul"].encode())
+                matched = soul_path.read_text() == values["soul"]
+                sections["soul"] = {"applied": matched, "message": "Saved; applies at next start." if matched else "Persona readback differs."}
         except Exception:
             sections["soul"] = {"applied": False, "message": "Persona could not be saved. Other section outcomes are shown separately."}
         return {"ok": all(item["applied"] for item in sections.values()), "sections": sections,

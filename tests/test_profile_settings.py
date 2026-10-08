@@ -76,6 +76,19 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(result['snapshot']['values']['soul'], 'Original persona')
         self.assertEqual(result['snapshot']['values']['model'], self.values['model'])
 
+    def test_external_persona_change_between_section_writes_survives(self):
+        save_config = module.Settings.save_config
+        def external_edit(settings, config):
+            save_config(settings, config)
+            (settings.home / 'SOUL.md').write_text('External concurrent persona')
+        with patch.object(module.Settings, 'save_config', external_edit):
+            result = module.run(self.request(), 'fixture', self.root)
+        self.assertFalse(result['ok'])
+        self.assertTrue(result['sections']['model']['applied'])
+        self.assertFalse(result['sections']['soul']['applied'])
+        self.assertIn('changed during', result['sections']['soul']['message'])
+        self.assertEqual(result['snapshot']['values']['soul'], 'External concurrent persona')
+
     def test_kernel_owner_blocks_save_and_adoption(self):
         with open(self.home / '.blueoffice-lease', 'w') as lease:
             fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
