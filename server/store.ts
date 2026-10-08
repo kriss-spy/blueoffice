@@ -211,7 +211,7 @@ export class OfficeStore {
       throw error;
     }
   }
-  private recordLayoutAssignment(agent: OfficeAgent) {
+  private recordLayoutAssignment(agent: OfficeAgent, wasKnown: boolean) {
     const row = this.db
       .prepare(
         "SELECT revision,body FROM layout_revisions ORDER BY revision DESC LIMIT 1",
@@ -225,8 +225,16 @@ export class OfficeStore {
       return;
     }
     const parsed = layoutSnapshotSchema.safeParse(value);
-    if (!parsed.success || parsed.data.assignments[agent.id] === agent.deskId)
+    if (!parsed.success || validateLayout(parsed.data).length) return;
+    const ids = new Set(this.agents().map((current) => current.id));
+    // Runtime state can still be persisted while a corrupt layout awaits recovery.
+    if (
+      Object.keys(parsed.data.assignments).some((id) => !ids.has(id)) ||
+      (wasKnown && !(agent.id in parsed.data.assignments)) ||
+      [...ids].some((id) => id !== agent.id && !(id in parsed.data.assignments))
+    )
       return;
+    if (parsed.data.assignments[agent.id] === agent.deskId) return;
     const updated: LayoutSnapshot = {
       ...parsed.data,
       revision: Number(row.revision) + 1,
@@ -359,7 +367,7 @@ export class OfficeStore {
           "INSERT INTO agents VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
         )
         .run(agent.id, JSON.stringify(agent));
-      this.recordLayoutAssignment(agent);
+      this.recordLayoutAssignment(agent, previous !== undefined);
       this.db
         .prepare(
           "INSERT INTO events(event_key,agent_id,kind,at,body) VALUES (?,?,?,?,?)",

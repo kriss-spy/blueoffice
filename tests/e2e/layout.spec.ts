@@ -123,6 +123,10 @@ test("invalid ghost, component detachment, safe unassignment and Cancel stay loc
   await expect(
     editor.getByRole("button", { name: "Apply placement", exact: true }),
   ).toBeDisabled();
+  await page.screenshot({
+    path: test.info().outputPath("invalid-footprint.png"),
+    fullPage: true,
+  });
   await editor
     .getByRole("button", { name: "Discard ghost", exact: true })
     .click();

@@ -214,3 +214,30 @@ test("valid-shaped latest layout with broken assistant references is corrupt and
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("pending runtime state still persists during corruption and does not replace recovery with a guessed assignment", () => {
+  const { root, path, store } = setup();
+  try {
+    const before = agent();
+    store.save(before, "created", "created");
+    const service = new LayoutService(store);
+    const previous = service.snapshot();
+    const latest = service.save({
+      baseRevision: previous.revision,
+      draft: removePlacement(previous, "desk-2"),
+    });
+    const raw = new DatabaseSync(path);
+    raw
+      .prepare("UPDATE layout_revisions SET body=? WHERE revision=?")
+      .run(JSON.stringify({ ...latest, assignments: {} }), latest.revision);
+    raw.close();
+    store.save({ ...before, work: "tool" }, "tool", "tool");
+    const recovered = service.snapshot();
+    assert.equal(recovered.recoveredFrom, previous.revision);
+    assert.equal(store.agents()[0].work, "tool");
+    assert.deepEqual(store.agents()[0].requests, before.requests);
+    store.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
