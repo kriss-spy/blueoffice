@@ -84,7 +84,7 @@ function Chair() {
     <group position={workstation.anchors.chair}>
       <Cylinder
         position={[0, 0.08, 0]}
-        radius={0.3}
+        radius={0.18}
         height={0.04}
         color={palette.frame}
       />
