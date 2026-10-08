@@ -11,6 +11,11 @@
 .transfer-dialog {
   position: fixed;
   inset: 8vh 12vw;
+  margin: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
   overflow-y: auto;
   z-index: 70;
   background: #f8fbfc;
@@ -50,4 +55,8 @@
     inset: 3vh 3vw;
     padding: 16px;
   }
+}
+
+.transfer-dialog::backdrop {
+  background: #263b4b66;
 }

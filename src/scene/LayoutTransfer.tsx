@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { command } from "../api";
 import type { LayoutSnapshot } from "../../shared/layout";
 import type {
@@ -12,12 +12,25 @@ export function LayoutTransfer({
   layout,
   saved,
 }: LayoutTransferProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState("");
   const [report, setReport] = useState<LayoutPreview>();
   const [bindings, setBindings] = useState<Record<string, string | null>>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (open && dialogRef.current && !dialogRef.current.open)
+      dialogRef.current.showModal();
+    if (!open && returnFocus.current?.isConnected) returnFocus.current.focus();
+  }, [open]);
+  function closeImport() {
+    setOpen(false);
+    setReport(undefined);
+    setBindings(undefined);
+    setError("");
+  }
   async function exportFile() {
     setBusy(true);
     setError("");
@@ -92,6 +105,10 @@ export function LayoutTransfer({
         <button
           disabled={!connected || busy}
           onClick={() => {
+            returnFocus.current =
+              document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null;
             setOpen(true);
             setError("");
           }}
@@ -123,11 +140,14 @@ export function LayoutTransfer({
         </details>
       )}
       {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
+        <dialog
+          ref={dialogRef}
           aria-label="Import portable layout"
           className="transfer-dialog"
+          onCancel={(event) => {
+            event.preventDefault();
+            if (!busy) closeImport();
+          }}
         >
           <h3>Import portable layout</h3>
           <p>
@@ -245,15 +265,7 @@ export function LayoutTransfer({
           )}
           {error && <p role="alert">{error}</p>}
           <div className="transfer-actions">
-            <button
-              disabled={busy}
-              onClick={() => {
-                setOpen(false);
-                setReport(undefined);
-                setBindings(undefined);
-                setError("");
-              }}
-            >
+            <button disabled={busy} onClick={closeImport}>
               Cancel import
             </button>
             <button
@@ -263,7 +275,7 @@ export function LayoutTransfer({
               Apply imported layout
             </button>
           </div>
-        </div>
+        </dialog>
       )}
     </section>
   );

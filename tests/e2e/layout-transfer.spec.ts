@@ -243,3 +243,27 @@ test("unknown office-agent references remain unresolved across reload and re-exp
     page.getByRole("region", { name: "Portable layouts" }),
   ).toContainText("foreign-agent-reference");
 });
+
+test("portable import modal traps focus, closes with Escape and returns focus to Import", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  const button = page.getByRole("button", {
+    name: "Import layout",
+    exact: true,
+  });
+  await button.click();
+  const dialog = page.getByRole("dialog", { name: "Import portable layout" });
+  await expect(dialog).toBeVisible();
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press("Tab");
+    expect(
+      await dialog.evaluate((node) => node.contains(document.activeElement)),
+    ).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(button).toBeFocused();
+});
