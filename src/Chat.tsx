@@ -12,10 +12,12 @@ export function Chat({
   agent,
   connected,
   run,
+  focusRequest,
 }: {
   agent: OfficeAgent;
   connected: boolean;
   run: (action: string, body?: unknown) => Promise<void>;
+  focusRequest?: { id: string };
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -29,6 +31,16 @@ export function Chat({
     if (follow.current && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
   }, [agent.messages, agent.requests]);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const card = [
+      ...(transcript.current?.querySelectorAll<HTMLElement>(
+        "[data-request-id]",
+      ) ?? []),
+    ].find((el) => el.dataset.requestId === focusRequest.id);
+    card?.focus();
+    card?.scrollIntoView({ block: "nearest" });
+  }, [focusRequest]);
   const target = { epoch: agent.epoch!, sessionId: agent.liveSessionId! };
   const send = async (event: FormEvent) => {
     event.preventDefault();

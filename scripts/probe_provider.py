@@ -39,8 +39,11 @@ class MockProvider:
                         tool = ("clarify", {"questions": [{"question": "Desk?", "choices": ["Oak", "Birch"]},
                                                            {"question": "Lamp?", "choices": ["Blue", "White"], "multi_select": "MULTI" in user}]})
                     elif "PROBE_APPROVAL" in user:
-                        # The path is in the disposable namespace. The harness always denies.
-                        tool = ("terminal", {"command": "rm -rf /tmp/blueoffice-approval-sentinel"})
+                        # Only a disposable namespace sentinel; never a host path.
+                        command = "rm -rf /tmp/blueoffice-approval-sentinel"
+                        if "REDACT" in user:
+                            command += " # GITHUB_TOKEN=ghp_" + "A" * 36
+                        tool = ("terminal", {"command": command})
                 message = {"role": "assistant", "content": "Synthetic turn complete."}
                 finish = "stop"
                 if tool:

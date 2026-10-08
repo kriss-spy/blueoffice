@@ -53,7 +53,8 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+.request-card:focus-visible {
   outline: 3px solid #f0ad4e;
   outline-offset: 3px;
 }
@@ -1088,4 +1089,9 @@ select {
 }
 .request-card fieldset:disabled {
   opacity: 0.7;
+}
+
+.permission-decision {
+  border-left: 3px solid currentColor;
+  padding-left: 0.75rem;
 }

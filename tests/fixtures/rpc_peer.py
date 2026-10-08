@@ -93,8 +93,8 @@ def task(prompt, generation):
         busy = False
         event("session.info", {"running": False})
         return
-    if any(word in lower for word in ("question", "batch", "approval", "secret")):
-        kind = "approval" if "approval" in lower else "secret" if "secret" in lower else "clarify"
+    if any(word in lower for word in ("question", "batch", "approval", "secret", "sudo", "vault")):
+        kind = "approval" if "approval" in lower else "sudo" if "sudo" in lower else "vault.unlock_prompt" if "vault" in lower else "secret" if "secret" in lower else "clarify"
         params = {"session_id": session, "question": "Which desk should we use?", "choices": ["Oak", "Birch"]}
         if "batch" in lower:
             params = {"session_id": session, "questions": [
@@ -109,17 +109,31 @@ def task(prompt, generation):
             params["questions"] = [None]
         if kind == "approval":
             params = {"session_id": session, "request_id": "inner-permission", "description": "Allow a synthetic command?", "command": "fixture-action", "choices": ["once", "deny"]}
-        if kind == "secret":
-            params = {"session_id": session, "prompt": "PRIVATE_SECRET_CANARY"}
+            if "all choices" in lower:
+                params["choices"] = ["once", "session", "always", "deny"]
+            if "unknown choice" in lower:
+                params["choices"] = ["once", "future-allow", "deny"]
+            if "missing id" in lower:
+                params.pop("request_id")
+            if "contradictory" in lower:
+                params["choices"] = ["session", "deny"]
+                params["allow_session"] = False
+            if "long id" in lower:
+                params["request_id"] = "inner-" + "x" * 300
+            if "private metadata" in lower:
+                params["command"] = "fixture-action TOKEN=" + os.environ.get("BLUEOFFICE_PROXY_KEY", "[redacted]")
+                params["internal_context"] = {"password": "PRIVATE_APPROVAL_METADATA"}
+        if kind in ("secret", "sudo", "vault.unlock_prompt"):
+            params = {"session_id": session, "prompt": "PRIVATE_SECRET_CANARY", "command": "PRIVATE_SUDO_COMMAND", "display_name": "PRIVATE_VAULT_NAME"}
         frame = {"id": generation if "numeric" in lower else f"srq-{generation}", "method": kind, "params": params}
         requests[frame["id"]] = frame
         write(frame)
-        if "expire" in lower:
+        if "expire" in lower or "resolve approval" in lower:
             def expire():
                 time.sleep(0.25)
                 if frame["id"] in requests:
                     requests.pop(frame["id"])
-                    event("request.cancel", {"id": frame["id"], "reason": "timeout"})
+                    event("request.cancel", {"id": frame["id"], "reason": "resolved" if "resolve approval" in lower else "timeout"})
                     finish(generation)
             threading.Thread(target=expire, daemon=True).start()
         if "disconnect" in lower:
@@ -137,6 +151,8 @@ for line in sys.stdin:
         log.write(json.dumps(frame) + "\n")
     if not method:
         if rid in requests:
+            if scenario == "lost-reply-ack":
+                os._exit(9)
             if scenario == "replay-cancel":
                 requests.pop(rid)
                 seq += 1

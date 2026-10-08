@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { approvalLabel, type ApprovalChoice } from "../shared/approval";
+import { useRef, useState, type FormEvent } from "react";
 import type { PendingRequest, Question } from "../shared/office";
 import {
   singleQuestion,
@@ -24,6 +25,7 @@ export function RequestCard({
     answer: string,
   ) => Promise<void>;
 }) {
+  const section = useRef<HTMLElement>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -48,6 +50,7 @@ export function RequestCard({
       setError((err as Error).message);
     } finally {
       setSubmitting(false);
+      section.current?.focus({ preventScroll: true });
     }
   };
   const questions = request.questions.length
@@ -82,6 +85,9 @@ export function RequestCard({
   };
   return (
     <section
+      ref={section}
+      tabIndex={-1}
+      data-request-id={request.id}
       className={`request-card ${request.kind}`}
       aria-label={
         request.kind === "approval" ? "Permission request" : "Question request"
@@ -89,7 +95,21 @@ export function RequestCard({
     >
       <h3>
         <span aria-hidden="true">
-          {request.kind === "approval" ? "◇" : "?"}
+          {request.kind === "approval" ? (
+            <svg
+              width="20"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M12 2 20 5v6c0 5-5 9-8 11-3-2-8-6-8-11V5Z" />
+              <path d="M9 11h6v5H9zM10 11V9a2 2 0 0 1 4 0v2" />
+            </svg>
+          ) : (
+            "?"
+          )}
         </span>
         {request.kind === "approval"
           ? "Permission needed"
@@ -100,6 +120,25 @@ export function RequestCard({
       {request.kind !== "clarify" ? (
         <p className="request-text">{request.text}</p>
       ) : null}
+      {request.kind === "approval" ? (
+        request.decision ? (
+          <p className="permission-decision" role="status">
+            Decision recorded:{" "}
+            <strong>{approvalLabel[request.decision.choice]}</strong>.
+            {request.decision.delivery === "unknown"
+              ? " Delivery is unknown; it will not be sent again automatically."
+              : request.decision.delivery === "pending"
+                ? " Sending…"
+                : " Reply delivered."}
+          </p>
+        ) : (
+          <p role="status">
+            {request.state === "open"
+              ? "Permission pending. Choose one of the actions below."
+              : "No decision recorded in BlueOffice."}
+          </p>
+        )
+      ) : null}
       {terminal ? (
         <p role="status">
           {request.state === "resolved"
@@ -109,7 +148,7 @@ export function RequestCard({
       ) : null}
       {request.freshness === "unknown" && !terminal ? (
         <p role="status">
-          Request status is unknown. Your known question and answers are
+          Request status is unknown. Your known request and replies are
           retained; sending is disabled.
         </p>
       ) : null}
@@ -163,27 +202,28 @@ export function RequestCard({
           ) : null}
         </form>
       ) : request.kind === "approval" ? (
-        <div className="permission-choices">
+        <div
+          className="permission-choices"
+          role="group"
+          aria-label="Permission decisions"
+        >
           {request.choices.map((choice) => (
             <button
               key={choice}
+              type="button"
               className={choice === "deny" ? "deny" : "primary"}
               disabled={blocked}
               onClick={() => void submit(() => onReply(request, { choice }))}
             >
-              {(
-                {
-                  once: "Allow once",
-                  session: "Allow for session",
-                  always: "Always allow",
-                  deny: "Deny",
-                } as Record<string, string>
-              )[choice] ?? choice}
+              {approvalLabel[choice as ApprovalChoice]}
             </button>
           ))}
         </div>
       ) : (
-        <p>Use Interrupt task to end this wait.</p>
+        <p>
+          This input cannot be entered in BlueOffice. Use Interrupt task to end
+          this wait.
+        </p>
       )}
       {error ? (
         <p role="alert" className="inline-error">
