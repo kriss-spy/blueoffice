@@ -11,6 +11,7 @@
     "starting",
     "stopping",
     "completion/new-turn/pending-resolution do not revive a previous cue; repeated terminal does not replay",
+    "already-active completion is permanently canceled by freshness loss, a new request, and brief transport reconnect",
     "unknown freshness retains exact actionable attention navigation",
     "transport disconnect remains explicit and retains attention"
   ],

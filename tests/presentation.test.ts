@@ -5,7 +5,11 @@ import {
   type OfficeAgent,
   type PendingRequest,
 } from "../shared/office";
-import { CompletionTracker } from "../shared/presentation";
+import {
+  CompletionTracker,
+  updateCompletionCues,
+  type CompletionCues,
+} from "../shared/presentation";
 const agent = (overrides: Partial<OfficeAgent> = {}): OfficeAgent => ({
   id: "a",
   name: "Yuuka",
@@ -51,6 +55,54 @@ const completed = (turnId = "t1", overrides: Partial<OfficeAgent> = {}) =>
     terminal: { epoch: "e", turnId, outcome: "completed" },
     ...overrides,
   });
+
+test("an active cue is permanently canceled by disconnect, stale freshness or attention", () => {
+  for (const interruption of [
+    { agent: completed(), connected: false },
+    { agent: completed("t1", { freshness: "unknown" }), connected: true },
+    { agent: completed("t1", { requests: [request()] }), connected: true },
+  ]) {
+    const tracker = new CompletionTracker();
+    tracker.observe([agent()], true);
+    let cues: CompletionCues = updateCompletionCues(
+      {},
+      [completed()],
+      true,
+      tracker.observe([completed()], true),
+      3000,
+    );
+    assert.ok(cues.a);
+    cues = updateCompletionCues(
+      cues,
+      [interruption.agent],
+      interruption.connected,
+      tracker.observe([interruption.agent], interruption.connected),
+      3000,
+    );
+    assert.deepEqual(cues, {});
+    cues = updateCompletionCues(
+      cues,
+      [completed()],
+      true,
+      tracker.observe([completed()], true),
+      3000,
+    );
+    assert.deepEqual(
+      cues,
+      {},
+      "same completed turn must not restart after the interruption",
+    );
+    assert.ok(
+      updateCompletionCues(
+        cues,
+        [completed("t2")],
+        true,
+        tracker.observe([completed("t2")], true),
+        6000,
+      ).a,
+    );
+  }
+});
 
 test("all live state labels preserve independent attention, work and freshness", () => {
   for (const [work, label] of Object.entries({

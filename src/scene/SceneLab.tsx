@@ -117,7 +117,11 @@ export function SceneLab() {
             type="file"
             accept=".glb"
             disabled={loading}
-            onChange={(e) => void open(e.target.files?.[0])}
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              void open(file);
+            }}
           />
         </label>
       </header>

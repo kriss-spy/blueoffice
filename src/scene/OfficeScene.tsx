@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { PCFShadowMap } from "three";
 import { presentAgent, type OfficeAgent } from "../../shared/office";
-import { CompletionTracker } from "../../shared/presentation";
+import {
+  CompletionTracker,
+  updateCompletionCues,
+  type CompletionCues,
+} from "../../shared/presentation";
 import {
   defaultDesks,
   proofAvatar,
@@ -59,9 +63,7 @@ export function OfficeScene({
   const markers = useRef<(HTMLButtonElement | null)[]>([]);
   const generation = useRef(0);
   const tracker = useRef(new CompletionTracker());
-  const [cues, setCues] = useState<
-    Record<string, { key: string; until: number }>
-  >({});
+  const [cues, setCues] = useState<CompletionCues>({});
   const [reducedMotion, setReducedMotion] = useState(
     () => matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -73,22 +75,15 @@ export function OfficeScene({
   }, []);
   useEffect(() => {
     const ids = tracker.current.observe(agents, connected);
-    if (ids.length)
-      setCues((previous) => ({
-        ...previous,
-        ...Object.fromEntries(
-          ids.map((id) => [
-            id,
-            {
-              key: presentAgent(
-                agents.find((agent) => agent.id === id)!,
-                connected,
-              ).terminalKey!,
-              until: performance.now() + 3000,
-            },
-          ]),
-        ),
-      }));
+    setCues((previous) =>
+      updateCompletionCues(
+        previous,
+        agents,
+        connected,
+        ids,
+        performance.now() + 3000,
+      ),
+    );
   }, [agents, connected]);
   useEffect(() => {
     const future = Object.values(cues)
@@ -183,7 +178,11 @@ export function OfficeScene({
                 type="file"
                 accept=".glb"
                 disabled={loading}
-                onChange={(e) => void open(e.target.files?.[0])}
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  e.currentTarget.value = "";
+                  void open(file);
+                }}
               />
             </label>
             <p>
