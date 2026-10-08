@@ -51,6 +51,8 @@ The clip inventory does not establish seated typing. Battle kneeling and unclass
 
 ## Verification evidence
 
-The automated browser run passes idle/tool/question/approval/error fixtures, missing-clip fallback, malformed/unpinned asset rejection, retained valid rendering, camera bounds/reset, duplicate rig independence and both viewport captures. It records zero page/console errors, zero external requests and zero office API requests. The only console warning is R3F's upstream deprecated `THREE.Clock` use. Button and native pointer camera checks are recorded separately. Local screenshots and their hashes are indexed in the browser summary; the continuous capture is in `artifacts/avatar-proof/browser/video/`.
+The automated browser run passes idle/tool/question/approval/error fixtures, missing-clip fallback, malformed/unpinned asset rejection, retained valid rendering, camera bounds/reset, duplicate rig independence and both viewport captures. It records zero page/console errors, zero external requests and zero office API requests. The only console warning is R3F's upstream deprecated `THREE.Clock` use. Button and [native pointer camera checks](avatar-proof/pointer.json) pass at both viewport sizes. Local screenshots and their hashes are indexed in the browser summary; the continuous capture is in `artifacts/avatar-proof/browser/video/`.
+
+The complete regression suite passes: 52 TypeScript tests, 19 Python protocol/ownership/settings tests, and the production build including TypeScript checking. No live model quota was consumed.
 
 The lazily loaded fixture scene bundle is approximately 996 KB minified (265 KB gzip); Vite flags its size. It is not loaded on the normal chat route. Optimization, frame pacing and larger-roster memory gates remain #17 rather than being inferred from this two-character proof.

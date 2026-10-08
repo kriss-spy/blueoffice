@@ -30,6 +30,7 @@ import {
   boneSignature,
   cloneAvatar,
   disposeAvatar,
+  disposeAvatarInstance,
   loadProofAvatar,
   type AvatarAsset,
 } from "./avatar";
@@ -202,6 +203,7 @@ function Avatar({
   onSelect: () => void;
 }) {
   const instance = useMemo(() => cloneAvatar(asset), [asset]);
+  useEffect(() => () => disposeAvatarInstance(instance), [instance]);
   const measurement = useRef({ elapsed: 1, box: [] as number[] });
   const requested =
     motion === "missing" ? "Absent_Clip" : proofAvatar.clips[motion];

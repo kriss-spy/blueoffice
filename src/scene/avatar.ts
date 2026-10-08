@@ -2,6 +2,7 @@ import {
   AnimationMixer,
   Box3,
   Mesh,
+  SkinnedMesh,
   Vector3,
   type Object3D,
   type Material,
@@ -67,7 +68,22 @@ export function cloneAvatar(asset: AvatarAsset) {
   const scene = clone(asset.gltf.scene);
   return { scene, mixer: new AnimationMixer(scene) };
 }
+export function disposeAvatarInstance(
+  instance: ReturnType<typeof cloneAvatar>,
+) {
+  instance.mixer.stopAllAction();
+  instance.mixer.uncacheRoot(instance.scene);
+  disposeSkeletons(instance.scene);
+}
+function disposeSkeletons(scene: Object3D) {
+  const skeletons = new Set<SkinnedMesh["skeleton"]>();
+  scene.traverse((object) => {
+    if (object instanceof SkinnedMesh) skeletons.add(object.skeleton);
+  });
+  for (const skeleton of skeletons) skeleton.dispose();
+}
 export function disposeAvatar(gltf: GLTF) {
+  disposeSkeletons(gltf.scene);
   const materials = new Set<Material>(),
     textures = new Set<Texture>();
   gltf.scene.traverse((object) => {

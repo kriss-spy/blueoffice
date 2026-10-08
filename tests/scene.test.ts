@@ -12,7 +12,11 @@ import {
   Group,
 } from "three";
 import { inspectProofGlb, workstation, worldAnchor } from "../shared/scene";
-import { cloneAvatar, type AvatarAsset } from "../src/scene/avatar";
+import {
+  cloneAvatar,
+  disposeAvatarInstance,
+  type AvatarAsset,
+} from "../src/scene/avatar";
 
 function glb(overrides: Record<string, unknown> = {}) {
   const text = JSON.stringify({
@@ -107,4 +111,25 @@ test("duplicate avatars share geometry and materials but own skeletons and mixer
   assert.equal(bone.position.x, 0);
   second.mixer.update(0.1);
   assert.equal(a.skeleton.bones[0].position.x, 0.5);
+  a.skeleton.computeBoneTexture();
+  b.skeleton.computeBoneTexture();
+  let boneTextureDisposals = 0,
+    geometryDisposals = 0,
+    materialDisposals = 0;
+  a.skeleton.boneTexture!.addEventListener(
+    "dispose",
+    () => boneTextureDisposals++,
+  );
+  geometry.addEventListener("dispose", () => geometryDisposals++);
+  (a.material as MeshBasicMaterial).addEventListener(
+    "dispose",
+    () => materialDisposals++,
+  );
+  disposeAvatarInstance(first);
+  assert.equal(boneTextureDisposals, 1);
+  assert.equal(geometryDisposals, 0);
+  assert.equal(materialDisposals, 0);
+  assert.equal(a.skeleton.boneTexture, null);
+  assert.notEqual(b.skeleton.boneTexture, null);
+  disposeAvatarInstance(second);
 });
