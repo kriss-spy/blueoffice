@@ -16,8 +16,8 @@ Apply uses the editor's base revision and one SQLite transaction for placements,
 
 - Eight deterministic transfer tests passed in the worker's required offline gate: `artifacts/verification/2026-10-08T15-13-49.384Z-check-988aef47/report.json`.
 - Tests cover private-field exclusion, rotated assigned round trip, exact missing/mismatched/unreviewed diagnostics, unresolved-agent persistence, malformed/version/traversal/bounds rejection, explicit binding conflicts and displacement reporting, stale application, and import A → ordinary character B → save → corrupt-layout recovery retaining B.
-- Four tracked fixture browser scenarios are written in `tests/e2e/layout-transfer.spec.ts`: real downloaded JSON/privacy and rotated missing-character round trip during pending input; invalid previews; competing editor revision; unknown references across reload/re-export.
-- Browser execution and assigned-character loader review enforcement remain pending root endpoint/UI integration. This document does not claim issue or release acceptance.
+- Five tracked fixture browser scenarios are written in `tests/e2e/layout-transfer.spec.ts`: real downloaded JSON/privacy and rotated missing-character round trip during pending input; invalid previews; competing editor revision; unknown references across reload/re-export.
+- HTTP/UI integration and assigned-character review enforcement are implemented. Preview and assigned-character caches are separate; an unreviewed preview cannot authorize a live office assignment. `tests/e2e/transfer-review.spec.ts` exercises this cache boundary. The combined browser run passed the five data/asset scenarios and exposed a native-dialog Tab escape; an explicit boundary loop corrects it while retaining native inert/Escape/focus return. Final combined verification and independent review remain required. This document does not claim release acceptance.
 
 ## Review scenario
 

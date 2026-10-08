@@ -1,6 +1,6 @@
 # Profile settings and adoption — ticket #5 progress
 
-Verified 2026-10-08 against installed Hermes `f1247d2e0146bbd8edd4e510b9e67e0d259509a4`, Node.js 22.17.1 and Chromium 153.0.8010.12. This implements profile setup, editing and adoption. **Ticket #5 remains open:** catalog-backed avatar/workstation selection must be integrated with #13/#14. Existing assignment fields are retained, but this milestone does not claim the visual or assignment gates.
+Verified 2026-10-08 against installed Hermes `f1247d2e0146bbd8edd4e510b9e67e0d259509a4`, Node.js 22.17.1 and Chromium 153.0.8010.12. This implements profile setup, editing and adoption. Catalog-backed avatar/workstation selection is now integrated with #13/#14; final combined review is pending.
 
 ## Implemented behavior
 
@@ -23,7 +23,7 @@ Manual approvals reject a profile `.env` or `.op.env` definition of `HERMES_YOLO
 
 ## Limits and next work
 
-The editor intentionally exposes only the proved model routes and the terminal/file/clarification tool groups; unsupported inherited settings require explicit selection before saving. Native general configuration writes have no cross-process compare-and-swap. BlueOffice serializes its own writers and rejects observed revision conflicts; the adoption policy requires other editors/runtimes to be stopped and does not interlock arbitrary external editors that ignore it. Linked managed settings files are rejected rather than followed. Avatar and workstation selectors remain pending the actual catalogs. This is not release acceptance.
+The editor intentionally exposes only the proved model routes and the terminal/file/clarification tool groups; unsupported inherited settings require explicit selection before saving. Native general configuration writes have no cross-process compare-and-swap. BlueOffice serializes its own writers and rejects observed revision conflicts; the adoption policy requires other editors/runtimes to be stopped and does not interlock arbitrary external editors that ignore it. Linked managed settings files are rejected rather than followed. Setup now collects an exact reviewed character (or a diagnostic placeholder) and a complete free workstation (or explicitly unassigned). A reservation precedes asynchronous profile writes, including adoption recovery, and concurrent layout edits are refused during setup. Invalid character references fail before profile writes. This is not release acceptance.
 
 ```sh
 npm test
@@ -31,3 +31,7 @@ npm run build
 python3 -m unittest discover -s tests -v
 python3 scripts/hermes_probe.py --suite profiles --output artifacts/profiles
 ```
+
+## Assignment completion evidence
+
+`tests/setup.test.ts` covers reservations and failed-setup release, independent reused-avatar identities, restart persistence, recovery after lost adoption response, and HTTP character validation before profile writes. `tests/e2e/setup.spec.ts` exercises new and adopted setup through native browser selectors. `tests/e2e/setup-overview.spec.ts` demonstrates independent prompts, question/denial, stop and configuration with two assistants sharing one reviewed fixture character. The combined offline and installed integration gates passed on `0dc2cf5`; the initial full browser attempt passed 21 of 22 scenarios and identified a portable-import focus escape, corrected separately. Final combined gates and independent acceptance are required before closure.
