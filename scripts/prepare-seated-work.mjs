@@ -315,6 +315,52 @@ scene.traverse((o) => {
   }
 });
 console.log({ soleBounds, clipping, clipMeshes, triangleIntersections });
+const roomMeasurements = {
+  baseVertexIntersections: 0,
+  supportTriangleIntersections: 0,
+};
+const supportBox = new Box3(
+  new Vector3(-0.0175, -Math.hypot(0.26, 0.26) / 2, -0.0175),
+  new Vector3(0.0175, Math.hypot(0.26, 0.26) / 2, 0.0175),
+);
+const inverseSupport = new Quaternion().setFromAxisAngle(
+  new Vector3(1, 0, 0),
+  -Math.PI / 4,
+);
+scene.traverse((o) => {
+  if (!o.isSkinnedMesh) return;
+  const positions = new Map();
+  const indices =
+    o.geometry.index?.array ??
+    Array.from({ length: o.geometry.attributes.position.count }, (_, i) => i);
+  for (const v of new Set(indices)) {
+    const p = o
+      .getVertexPosition(v, new Vector3())
+      .applyMatrix4(o.matrixWorld)
+      .add(offset)
+      .multiplyScalar(scale);
+    p.x = -p.x;
+    p.z = 0.72 - p.z;
+    positions.set(v, p);
+    if (p.y > 0.06 && p.y < 0.1 && Math.hypot(p.x, p.z - 0.72) < 0.18)
+      roomMeasurements.baseVertexIntersections++;
+  }
+  for (let i = 0; i < indices.length; i += 3) {
+    for (const x of [-0.23, 0.23]) {
+      const points = [indices[i], indices[i + 1], indices[i + 2]].map((v) =>
+        positions
+          .get(v)
+          .clone()
+          .sub(new Vector3(x, 0.35, 1.03))
+          .applyQuaternion(inverseSupport),
+      );
+      if (supportBox.intersectsTriangle(new Triangle(...points)))
+        roomMeasurements.supportTriangleIntersections++;
+    }
+  }
+});
+console.log({ roomMeasurements });
+
 const markers = {
   pelvis: normalized("Bip001 Pelvis").toArray(),
   leftHand: normalized("Bip001 L Hand").toArray(),
@@ -448,6 +494,7 @@ await fs.writeFile(
       soleBounds,
       clipping,
       triangleIntersections,
+      roomMeasurements,
       errors: report.issues.numErrors,
       warnings: report.issues.numWarnings,
     },
@@ -460,6 +507,7 @@ console.log({
   soleBounds,
   clipping,
   triangleIntersections,
+  roomMeasurements,
   errors: report.issues.numErrors,
   warnings: report.issues.numWarnings,
 });
