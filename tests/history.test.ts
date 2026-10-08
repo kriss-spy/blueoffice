@@ -142,3 +142,25 @@ test("database appearance retains the stable history selection key", async (t) =
     "Synthetic owned message",
   );
 });
+
+test("valid JSON with malformed history fields fails closed before reaching Activity", async (t) => {
+  const { history, factory } = await setup(t);
+  const profile = (await factory.historyProfiles())[0];
+  await writeFile(
+    join(profile.home, ".history-fixture.json"),
+    JSON.stringify({
+      records: [
+        {
+          storedSessionId: "malformed-fields",
+          title: "Broken row",
+          source: "cli",
+          metrics: "TOKEN=PRIVATE_METRICS_CANARY",
+        },
+      ],
+    }),
+  );
+  const list = await history.list();
+  assert.equal(list.sessions.length, 0);
+  assert.equal(list.diagnostics.length, 1);
+  assert.equal(JSON.stringify(list).includes("PRIVATE_METRICS_CANARY"), false);
+});

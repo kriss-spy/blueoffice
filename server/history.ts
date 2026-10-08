@@ -218,7 +218,13 @@ export class HistoryService {
           (query.attention === "attention" ? row.attention : row.error))
       );
     });
+    sessions.sort(
+      (a, b) =>
+        (Date.parse(b.lastActivityAt ?? b.startedAt ?? "") || 0) -
+        (Date.parse(a.lastActivityAt ?? a.startedAt ?? "") || 0),
+    );
     const searched: HistorySession[] = [];
+    let publicSearchReads = 0;
     for (const row of sessions) {
       if (
         !search ||
@@ -229,6 +235,11 @@ export class HistoryService {
       )
         searched.push(row);
       else {
+        if (publicSearchReads >= 25) {
+          index.truncated = true;
+          continue;
+        }
+        publicSearchReads++;
         try {
           const detail = await this.readDetail(row, index.profiles);
           if (
@@ -243,7 +254,14 @@ export class HistoryService {
             searched.push(row);
           index.truncated ||= detail.truncated;
         } catch {
-          /* Per-profile diagnostics already indicate failed history reads. */
+          index.truncated = true;
+          if (!index.diagnostics.some((d) => d.profileId === row.profileId))
+            index.diagnostics.push({
+              profileId: row.profileId,
+              profileName: row.profileName,
+              message:
+                "Public transcript search is incomplete for this profile. Refresh history and inspect the session directly.",
+            });
         }
       }
     }
@@ -259,7 +277,7 @@ export class HistoryService {
       diagnostics: index.diagnostics,
       truncated: index.truncated,
       searchScope:
-        "Search covers titles, identifiers and the bounded public conversation/tool pages. Private reasoning and hidden rows are excluded.",
+        "Search covers all loaded titles and identifiers, plus the bounded public conversation/tool pages of up to 25 newest matching sessions. Narrow the agent, profile, source or time filters for older transcripts. Private reasoning and hidden rows are excluded.",
     };
   }
   async detail(id: string): Promise<HistoryDetail> {

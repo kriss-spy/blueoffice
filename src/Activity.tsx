@@ -58,7 +58,15 @@ export function Activity({
     const timer = window.setTimeout(() => {
       setLoading(true);
       const params = new URLSearchParams(
-        Object.entries(query).filter(([, v]) => !!v),
+        Object.entries({
+          ...query,
+          ...(query.after
+            ? { after: new Date(query.after).toISOString() }
+            : {}),
+          ...(query.before
+            ? { before: new Date(query.before).toISOString() }
+            : {}),
+        }).filter(([, v]) => !!v),
       );
       read<HistoryList>(`/api/history?${params}`, controller.signal)
         .then((next) => {
@@ -209,7 +217,7 @@ export function Activity({
           </select>
         </label>
         <label>
-          From
+          From (local time)
           <input
             type="datetime-local"
             value={query.after ?? ""}
@@ -217,7 +225,7 @@ export function Activity({
           />
         </label>
         <label>
-          Until
+          Until (local time)
           <input
             type="datetime-local"
             value={query.before ?? ""}

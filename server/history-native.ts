@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import type { HistoryProfile, HistoryReadResult } from "../shared/history.js";
 import { HistoryError } from "./history.js";
+import { historyProfilesSchema, historyReadSchema } from "./history-schema.js";
 
 export async function nativeHistory<
   T extends HistoryProfile[] | HistoryReadResult,
@@ -48,7 +49,11 @@ export async function nativeHistory<
               : item,
           );
           if (error || value.error) throw new Error();
-          accept(value as T);
+          accept(
+            (request.action === "profiles"
+              ? historyProfilesSchema.parse(value)
+              : historyReadSchema.parse(value)) as T,
+          );
         } catch {
           reject(
             new HistoryError(
