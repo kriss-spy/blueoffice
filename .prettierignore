@@ -1,10 +1,6 @@
-.scratch/
-__pycache__/
-*.pyc
-.venv/
 node_modules/
 dist/
-.blueoffice/
 artifacts/
 playwright-report/
 test-results/
+.blueoffice/
