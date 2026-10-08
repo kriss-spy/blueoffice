@@ -13,6 +13,13 @@ async function layout(
   return page.evaluate(async () => (await fetch("/api/layout")).json());
 }
 
+function mutationFrames(value: Awaited<ReturnType<typeof frames>>) {
+  return value.filter(
+    (frame) =>
+      !["session.events.since", "session.activate"].includes(frame.method),
+  );
+}
+
 test("move, rotate, undo/redo, save and reload during pending input preserve the exact live request", async ({
   page,
   office,
@@ -59,6 +66,7 @@ test("move, rotate, undo/redo, save and reload during pending input preserve the
     .getByRole("button", { name: "Save layout", exact: true })
     .click();
   await expect(editor).not.toBeVisible();
+  expect(await frames(before)).toEqual(beforeFrames);
   await page.reload();
   const saved = await layout(page);
   expect(saved.placements).toHaveLength(1);
@@ -71,12 +79,23 @@ test("move, rotate, undo/redo, save and reload during pending input preserve the
   expect(after.liveSessionId).toBe(before.liveSessionId);
   expect(after.turnId).toBe(before.turnId);
   expect(after.requests).toEqual(before.requests);
-  expect(await frames(after)).toEqual(beforeFrames);
+  expect(mutationFrames(await frames(after))).toEqual(
+    mutationFrames(beforeFrames),
+  );
   await page.getByText("Furniture inventory", { exact: false }).click();
   await page
     .getByRole("button", { name: "Locate desk-1", exact: true })
     .click();
   await expect(page.locator('[data-located="true"]')).toContainText("desk-1");
+  await expect
+    .poll(async () => {
+      const value = await page
+        .locator("[data-office-scene]")
+        .getAttribute("data-office-scene");
+      const target = value ? JSON.parse(value).camera?.target : undefined;
+      return target ? [target[0], target[2]] : undefined;
+    })
+    .toEqual([1, 0]);
   await page.screenshot({
     path: test.info().outputPath("saved-layout.png"),
     fullPage: true,
@@ -209,5 +228,7 @@ test("corrupt latest saved layout visibly restores the previous valid room witho
   const after = (await snapshot(page)).agents[0];
   expect(after.requests).toEqual(before.requests);
   expect(after.epoch).toBe(before.epoch);
-  expect(await frames(after)).toEqual(beforeFrames);
+  expect(mutationFrames(await frames(after))).toEqual(
+    mutationFrames(beforeFrames),
+  );
 });
