@@ -58,7 +58,9 @@ test("workstation rotation keeps all anchors in the same local frame", () => {
     const local = worldAnchor([x - 4, y, z + 2], [0, 0, 0], 3);
     local.forEach((value, i) => assert.ok(Math.abs(value - anchor[i]) < 1e-10));
   }
-  assert.equal(workstation.compatibility.seated, false);
+  assert.equal(workstation.compatibility.seated, true);
+  assert.deepEqual(workstation.seatingTags, ["blueoffice.seated-work.v1"]);
+  assert.equal(workstation.anchors.seat[1], 0.263);
 });
 
 test("proof GLB rejects malformed headers and external resources before loading", () => {

@@ -1,5 +1,7 @@
 import { CharacterRegistry, AssetError } from "./assets.js";
 import { assetRefSchema } from "../shared/assets.js";
+import { HistoryService, HistoryError } from "./history.js";
+import { LayoutError } from "./layout.js";
 import { MODEL_IDS } from "../shared/routes.js";
 import {
   createServer,
@@ -79,6 +81,11 @@ export function officeServer(
   assets = resolve("dist"),
   characters?: CharacterRegistry,
 ) {
+  const history = new HistoryService({
+    agents: () => office.snapshot().agents,
+    profiles: () => office.factory.historyProfiles(),
+    read: (profile, request) => office.factory.historyRead(profile, request),
+  });
   const sessions = new Map<string, string>();
   const clients = new Map<
     ServerResponse,
@@ -267,6 +274,38 @@ export function officeServer(
           send(res, 200, office.assignAvatar(avatarRoute[1], input.ref));
           return;
         }
+        if (url.pathname === "/api/history" && req.method === "GET") {
+          const query = z
+            .object({
+              category: z.enum(["chats", "automation", "all"]).optional(),
+              agentId: z.string().max(200).optional(),
+              profileId: z.string().max(200).optional(),
+              source: z.string().max(100).optional(),
+              after: z.iso.datetime().optional(),
+              before: z.iso.datetime().optional(),
+              attention: z.enum(["attention", "error"]).optional(),
+              search: z.string().max(500).optional(),
+            })
+            .strict()
+            .parse(Object.fromEntries(url.searchParams));
+          send(res, 200, await history.list(query));
+          return;
+        }
+        const historyRoute = /^\/api\/history\/([a-f0-9]{64})$/.exec(
+          url.pathname,
+        );
+        if (historyRoute && req.method === "GET") {
+          send(res, 200, await history.detail(historyRoute[1]));
+          return;
+        }
+        if (url.pathname === "/api/layout" && req.method === "GET") {
+          send(res, 200, office.layout());
+          return;
+        }
+        if (url.pathname === "/api/layout" && req.method === "POST") {
+          send(res, 200, office.saveLayout(await body(req)));
+          return;
+        }
         if (url.pathname === "/api/agents" && req.method === "POST") {
           const input = createInput.parse(await body(req));
           send(
@@ -435,7 +474,9 @@ export function officeServer(
       else if (
         error instanceof OfficeError ||
         error instanceof ProfileError ||
-        error instanceof AssetError
+        error instanceof AssetError ||
+        error instanceof LayoutError ||
+        error instanceof HistoryError
       )
         send(res, error.status, { error: error.message });
       else

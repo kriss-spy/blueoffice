@@ -25,7 +25,7 @@ export interface EventBatch {
   from: number;
   to: number;
   events: OfficeEvent[];
-  context: Pick<Snapshot, "routes" | "mode" | "pendingAdoptions">;
+  context: Pick<Snapshot, "routes" | "mode" | "pendingAdoptions" | "layout">;
 }
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);

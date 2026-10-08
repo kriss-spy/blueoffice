@@ -22,6 +22,18 @@ export const assetPath = z
       !path.includes(".."),
     "Use plain relative paths without traversal, URLs or encoded characters.",
   );
+export const seatingProfileSchema = z
+  .object({
+    compatibility: z.array(id).min(1).max(8),
+    seat: point,
+    pelvis: point,
+    leftHand: point,
+    rightHand: point,
+    leftFoot: point,
+    rightFoot: point,
+    facing: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  })
+  .strict();
 const note = z.string().trim().min(1).max(2000);
 export const characterManifestSchema = z
   .object({
@@ -57,6 +69,7 @@ export const characterManifestSchema = z
         nameplate: point,
       })
       .strict(),
+    seating: seatingProfileSchema.optional(),
     capabilities: z
       .object({ standing: z.literal(true), seated: z.boolean() })
       .strict(),
@@ -88,6 +101,12 @@ export const characterManifestSchema = z
       ctx.addIssue({
         code: "custom",
         message: "Declare the model and each dependency exactly once.",
+      });
+    if (value.capabilities.seated && !value.seating)
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "Seated capability requires measured compatibility and contact markers.",
       });
     if (value.capabilities.seated !== !!value.clips.seated)
       ctx.addIssue({

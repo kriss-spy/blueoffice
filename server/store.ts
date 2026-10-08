@@ -1,3 +1,12 @@
+import {
+  initialLayout,
+  layoutSnapshotSchema,
+  validateLayout,
+  type LayoutSave,
+  type LayoutSnapshot,
+  type LayoutDraft,
+} from "../shared/layout.js";
+import { LayoutError } from "./layout.js";
 import type { CharacterPack } from "../shared/assets.js";
 import { randomUUID } from "node:crypto";
 import { agentChange, type OfficeEvent } from "../shared/events.js";
@@ -30,6 +39,7 @@ export class OfficeStore {
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS character_packs (asset_id TEXT NOT NULL, version TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(asset_id,version));
       CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS layout_revisions (revision INTEGER PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT UNIQUE NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS commands (agent_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(agent_id,id));
       CREATE TABLE IF NOT EXISTS adoption_intents (profile_home TEXT PRIMARY KEY, body TEXT NOT NULL);`);
@@ -42,6 +52,202 @@ export class OfficeStore {
     const columns = this.db.prepare("PRAGMA table_info(events)").all();
     if (!columns.some((c) => c.name === "body"))
       this.db.exec("ALTER TABLE events ADD COLUMN body TEXT");
+  }
+  hasSavedLayout(): boolean {
+    return !!this.db.prepare("SELECT 1 FROM layout_revisions LIMIT 1").get();
+  }
+  /** Read and recover the full layout/assignment transaction, retaining a monotonic revision. */
+  layoutSnapshot(): LayoutSnapshot {
+    const rows = this.db
+      .prepare(
+        "SELECT revision,body FROM layout_revisions ORDER BY revision DESC",
+      )
+      .all();
+    if (!rows.length) {
+      const agents = this.agents();
+      const draft = initialLayout(agents);
+      const ids = new Set(draft.placements.map((p) => p.id));
+      const occupied = new Set<string>();
+      let repaired = false;
+      for (const agent of agents) {
+        if (
+          agent.deskId &&
+          (!ids.has(agent.deskId) || occupied.has(agent.deskId))
+        ) {
+          draft.assignments[agent.id] = null;
+          repaired = true;
+        } else if (agent.deskId) occupied.add(agent.deskId);
+      }
+      const issues = validateLayout(draft);
+      if (issues.length)
+        throw new LayoutError(
+          issues.map((issue) => issue.message).join(" "),
+          422,
+        );
+      return this.writeLayout(draft, 1, repaired ? 0 : undefined);
+    }
+    for (const row of rows) {
+      let candidate: unknown;
+      try {
+        candidate = JSON.parse(String(row.body));
+      } catch {
+        continue;
+      }
+      const parsed = layoutSnapshotSchema.safeParse(candidate);
+      if (
+        !parsed.success ||
+        parsed.data.revision !== Number(row.revision) ||
+        validateLayout(parsed.data).length
+      )
+        continue;
+      if (Number(row.revision) === Number(rows[0].revision)) {
+        const agents = this.agents();
+        const ids = new Set(agents.map((agent) => agent.id));
+        if (
+          Object.keys(parsed.data.assignments).some((id) => !ids.has(id)) ||
+          agents.some((agent) => !(agent.id in parsed.data.assignments))
+        )
+          continue;
+        return parsed.data;
+      }
+      const agents = this.agents();
+      const draft: LayoutDraft = {
+        placements: parsed.data.placements,
+        assignments: Object.fromEntries(
+          agents.map((agent) => [
+            agent.id,
+            parsed.data.assignments[agent.id] ?? null,
+          ]),
+        ),
+      };
+      return this.writeLayout(
+        draft,
+        Number(rows[0].revision) + 1,
+        parsed.data.revision,
+      );
+    }
+    // If every revision is unreadable, retain safe agent state and regenerate a known valid room.
+    const draft = initialLayout(
+      this.agents().map((agent) => ({ id: agent.id, deskId: null })),
+    );
+    return this.writeLayout(draft, Number(rows[0].revision) + 1, 0);
+  }
+  saveLayout(input: LayoutSave): LayoutSnapshot {
+    const current = this.layoutSnapshot();
+    if (input.baseRevision !== current.revision)
+      throw new LayoutError(
+        "The office layout changed in another tab. Cancel and reopen Edit mode to load the latest revision.",
+      );
+    const agents = this.agents();
+    const ids = new Set(agents.map((agent) => agent.id));
+    if (
+      Object.keys(input.draft.assignments).some((id) => !ids.has(id)) ||
+      agents.some((agent) => !(agent.id in input.draft.assignments))
+    )
+      throw new LayoutError(
+        "Assistant inventory changed. Cancel and reopen Edit mode before saving.",
+      );
+    const issues = validateLayout(input.draft);
+    if (issues.length)
+      throw new LayoutError(
+        issues.map((issue) => issue.message).join(" "),
+        422,
+      );
+    return this.writeLayout(input.draft, current.revision + 1);
+  }
+  private writeLayout(
+    draft: LayoutDraft,
+    revision: number,
+    recoveredFrom?: number,
+  ): LayoutSnapshot {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const latest = Number(
+        this.db
+          .prepare(
+            "SELECT COALESCE(MAX(revision),0) AS revision FROM layout_revisions",
+          )
+          .get()!.revision,
+      );
+      if (latest !== revision - 1)
+        throw new LayoutError(
+          "The office layout changed while saving. Reload the latest revision before trying again.",
+        );
+      const snapshot: LayoutSnapshot = {
+        ...draft,
+        schemaVersion: 1,
+        revision,
+        ...(recoveredFrom === undefined ? {} : { recoveredFrom }),
+      };
+      this.db
+        .prepare("INSERT INTO layout_revisions VALUES (?,?)")
+        .run(revision, JSON.stringify(snapshot));
+      for (const previous of this.agents()) {
+        const deskId = draft.assignments[previous.id] ?? null;
+        if (previous.deskId === deskId) continue;
+        const agent = { ...previous, deskId };
+        this.db
+          .prepare("UPDATE agents SET body=? WHERE id=?")
+          .run(JSON.stringify(agent), agent.id);
+        this.db
+          .prepare(
+            "INSERT INTO events(event_key,agent_id,kind,at,body) VALUES (?,?,?,?,?)",
+          )
+          .run(
+            randomUUID(),
+            agent.id,
+            "layout.assigned",
+            new Date().toISOString(),
+            JSON.stringify(agentChange(previous, agent)),
+          );
+      }
+      this.db
+        .prepare("DELETE FROM events WHERE seq <= ?")
+        .run(this.revision() - this.retention);
+      this.db.exec("COMMIT");
+      return snapshot;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+  private recordLayoutAssignment(agent: OfficeAgent, wasKnown: boolean) {
+    const row = this.db
+      .prepare(
+        "SELECT revision,body FROM layout_revisions ORDER BY revision DESC LIMIT 1",
+      )
+      .get();
+    if (!row) return;
+    let value: unknown;
+    try {
+      value = JSON.parse(String(row.body));
+    } catch {
+      return;
+    }
+    const parsed = layoutSnapshotSchema.safeParse(value);
+    if (!parsed.success || validateLayout(parsed.data).length) return;
+    const ids = new Set(this.agents().map((current) => current.id));
+    // Runtime state can still be persisted while a corrupt layout awaits recovery.
+    if (
+      Object.keys(parsed.data.assignments).some((id) => !ids.has(id)) ||
+      (wasKnown && !(agent.id in parsed.data.assignments)) ||
+      [...ids].some((id) => id !== agent.id && !(id in parsed.data.assignments))
+    )
+      return;
+    if (parsed.data.assignments[agent.id] === agent.deskId) return;
+    const updated: LayoutSnapshot = {
+      ...parsed.data,
+      revision: Number(row.revision) + 1,
+      assignments: { ...parsed.data.assignments, [agent.id]: agent.deskId },
+    };
+    delete updated.recoveredFrom;
+    if (validateLayout(updated).length)
+      throw new LayoutError(
+        "The selected workstation is unavailable or incomplete.",
+      );
+    this.db
+      .prepare("INSERT INTO layout_revisions VALUES (?,?)")
+      .run(updated.revision, JSON.stringify(updated));
   }
   characterPacks(): CharacterPack[] {
     return this.db
@@ -161,6 +367,7 @@ export class OfficeStore {
           "INSERT INTO agents VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
         )
         .run(agent.id, JSON.stringify(agent));
+      this.recordLayoutAssignment(agent, previous !== undefined);
       this.db
         .prepare(
           "INSERT INTO events(event_key,agent_id,kind,at,body) VALUES (?,?,?,?,?)",

@@ -1,6 +1,8 @@
 import type { AssetRef } from "../shared/assets.js";
 import { recoverHistory, prepareRecoverySnapshot } from "./recovery.js";
 import { availableDesk } from "../shared/scene.js";
+import { LayoutService } from "./layout.js";
+import type { LayoutSnapshot } from "../shared/layout.js";
 import type { EventBatch } from "../shared/events.js";
 import { parseApproval } from "./approval.js";
 import {
@@ -61,6 +63,20 @@ export class Office extends EventEmitter {
     this.changed(agent, "avatar.assigned");
     return agent;
   }
+  readonly layouts: LayoutService;
+  layout(): LayoutSnapshot {
+    const layout = this.layouts.snapshot();
+    for (const agent of this.agents.values())
+      agent.deskId = layout.assignments[agent.id] ?? null;
+    return layout;
+  }
+  saveLayout(input: unknown) {
+    if (this.closing) throw new OfficeError("Office is shutting down.");
+    this.layouts.save(input);
+    const layout = this.layout();
+    this.emit("change");
+    return layout;
+  }
   private agents = new Map<string, OfficeAgent>();
   private runtimes = new Map<string, RpcChild>();
   private closing = false;
@@ -113,10 +129,13 @@ export class Office extends EventEmitter {
     readonly factory: RuntimeFactory,
   ) {
     super();
+    this.layouts = new LayoutService(store);
+    const savedLayout = store.hasSavedLayout();
+    if (savedLayout) this.layouts.snapshot();
     const savedAgents = store.agents();
     const usedDesks = savedAgents.map((agent) => agent.deskId);
     for (const agent of savedAgents) {
-      const needsDesk = !agent.deskId;
+      const needsDesk = !savedLayout && !agent.deskId;
       if (needsDesk) {
         agent.deskId = availableDesk(usedDesks);
         usedDesks.push(agent.deskId);
@@ -166,7 +185,9 @@ export class Office extends EventEmitter {
     }
   }
   snapshot(): Snapshot {
+    const layout = this.layout();
     return {
+      layout,
       ...this.store.checkpoint(),
       mode: this.factory.mode,
       routes: this.factory.routes(),
@@ -189,6 +210,7 @@ export class Office extends EventEmitter {
         routes: snapshot.routes,
         mode: snapshot.mode,
         pendingAdoptions: snapshot.pendingAdoptions,
+        layout: snapshot.layout,
       },
     };
   }
@@ -256,7 +278,7 @@ export class Office extends EventEmitter {
       settingsVersion: 0,
       configHistory: [],
       avatarId: "unassigned",
-      deskId: availableDesk(
+      deskId: this.layouts.availableDesk(
         [...this.agents.values()].map((agent) => agent.deskId),
       ),
       lifecycle: "stopped",

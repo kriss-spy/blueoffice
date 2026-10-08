@@ -81,6 +81,7 @@ export async function loadCharacter(ref: AssetRef): Promise<AvatarAsset> {
       hash: ref.sha256,
       bounds: [],
       clips: pack.manifest.clips,
+      seating: pack.manifest.seating,
     };
   } finally {
     for (const url of urls.values()) URL.revokeObjectURL(url);

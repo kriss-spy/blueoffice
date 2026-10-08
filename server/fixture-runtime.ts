@@ -5,6 +5,9 @@ import type { RuntimeFactory } from "./runtime.js";
 import { RouteRegistry, routingConfig } from "./routes.js";
 import type { Launch } from "./rpc.js";
 import { profileOperation } from "./profiles.js";
+import { nativeHistory } from "./history-native.js";
+import { historyFixture } from "./history-fixture.js";
+import type { HistoryProfile, HistoryReadResult } from "../shared/history.js";
 import type { ProfileDefaults, ProfileRequest } from "../shared/settings.js";
 import type { ModelId } from "../shared/routes.js";
 
@@ -22,6 +25,21 @@ export class FixtureRuntime implements RuntimeFactory {
     return profileOperation(
       { source: "fixture", python: "python3", profile_root: this.root },
       request,
+    );
+  }
+  async historyProfiles() {
+    return nativeHistory<HistoryProfile[]>(
+      { source: "fixture", python: "python3", profile_root: this.root },
+      { action: "profiles" },
+    );
+  }
+  async historyRead(
+    profile: HistoryProfile,
+    request: { storedSessionId?: string },
+  ) {
+    return nativeHistory<HistoryReadResult>(
+      { source: "fixture", python: "python3", profile_root: this.root },
+      { ...request, profileHome: profile.home },
     );
   }
   async prepare(
@@ -49,6 +67,10 @@ export class FixtureRuntime implements RuntimeFactory {
       }),
     );
     await writeFile(join(profileHome, "SOUL.md"), defaults?.soul ?? "");
+    await writeFile(
+      join(profileHome, ".history-fixture.json"),
+      JSON.stringify(historyFixture()),
+    );
     return { profileHome, profileName: `fixture-${id}` };
   }
   async launch(agent: OfficeAgent): Promise<Launch> {

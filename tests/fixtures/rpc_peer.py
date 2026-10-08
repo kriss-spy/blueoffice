@@ -94,6 +94,14 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
+    if "history stream" in lower:
+        for index in range(8):
+            if generation != cancel_generation:
+                return
+            event("message.delta", {"text": f"Public stream chunk {index}. "})
+            time.sleep(0.2)  # Longer than the history list debounce: each delta is independent evidence.
+        finish(generation)
+        return
     if scenario in ("checkpoint-stream", "checkpoint-tool-prefix", "checkpoint-tool"):
         key = os.environ["BLUEOFFICE_PROXY_KEY"]
         prefix = "Checking the files." if scenario != "checkpoint-stream" else ""

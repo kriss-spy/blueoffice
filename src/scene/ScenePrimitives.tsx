@@ -23,6 +23,8 @@ import {
   type AvatarMotion,
 } from "./avatar";
 
+import { seatedPlacement, type SeatingTarget } from "../../shared/seating";
+
 export type Metrics = {
   camera?: { position: number[]; target: number[]; zoom: number };
   avatars: Record<
@@ -34,13 +36,15 @@ export type Metrics = {
       geometryId: string;
       clip: string;
       box: number[];
+      seating?: ReturnType<typeof seatedPlacement>;
     }
   >;
   renderer?: { calls: number; triangles: number };
 };
 export type CameraCommand = {
-  action: "reset" | "in" | "out" | "left" | "right" | "up" | "down";
+  action: "reset" | "in" | "out" | "left" | "right" | "up" | "down" | "locate";
   id: number;
+  target?: Point;
 };
 export class SceneBoundary extends Component<
   { children: ReactNode },
@@ -74,6 +78,7 @@ export function Camera({
     [camera, gl],
   );
   const baseZoom = useRef(40);
+  const locatedTarget = useRef<Point | undefined>(undefined);
   const reset = (preserveView = false) => {
     const target = controls.target.clone();
     const zoomRatio = camera.zoom / baseZoom.current;
@@ -117,10 +122,17 @@ export function Camera({
   }, [size.width, size.height]);
   useEffect(() => {
     if (command.action === "reset") {
+      locatedTarget.current = undefined;
       reset();
       return;
     }
-    if (command.action === "in" || command.action === "out")
+    if (command.action === "locate" && command.target) {
+      locatedTarget.current = command.target;
+      const next = new Vector3(command.target[0], 0.6, command.target[2]);
+      camera.position.add(next.clone().sub(controls.target));
+      controls.target.copy(next);
+      camera.zoom = baseZoom.current * 1.5;
+    } else if (command.action === "in" || command.action === "out")
       camera.zoom *= command.action === "in" ? 1.2 : 1 / 1.2;
     else {
       const delta = new Vector3(
@@ -136,8 +148,16 @@ export function Camera({
   }, [command]);
   useFrame(() => {
     const previous = controls.target.clone();
-    controls.target.x = Math.max(-3, Math.min(3, controls.target.x));
-    controls.target.z = Math.max(-2.5, Math.min(2.5, controls.target.z));
+    const xExtent = Math.max(3, Math.abs(locatedTarget.current?.[0] ?? 0));
+    const zExtent = Math.max(2.5, Math.abs(locatedTarget.current?.[2] ?? 0));
+    controls.target.x = Math.max(
+      -xExtent,
+      Math.min(xExtent, controls.target.x),
+    );
+    controls.target.z = Math.max(
+      -zExtent,
+      Math.min(zExtent, controls.target.z),
+    );
     controls.target.y = 0.6;
     camera.position.add(controls.target.clone().sub(previous));
     camera.zoom = Math.max(
@@ -166,8 +186,10 @@ export function Avatar({
   time,
   metrics,
   onSelect,
+  seating,
 }: {
   asset: AvatarAsset;
+  seating?: SeatingTarget;
   id: string;
   position: Point;
   rotation: QuarterTurn;
@@ -180,9 +202,18 @@ export function Avatar({
   const instance = useMemo(() => cloneAvatar(asset), [asset]);
   useEffect(() => () => disposeAvatarInstance(instance), [instance]);
   const measurement = useRef({ elapsed: 1, box: [] as number[] });
+  const placement = seatedPlacement(
+    asset.clips?.seated &&
+      asset.gltf.animations.some((c) => c.name === asset.clips?.seated)
+      ? asset.seating
+      : undefined,
+    seating,
+  );
+  const effectiveMotion =
+    motion === "seated" && !placement.compatible ? "idle" : motion;
   const { clip } = resolveAvatarClip(
     asset.gltf.animations,
-    motion,
+    effectiveMotion,
     asset.clips,
   );
   useEffect(() => {
@@ -224,6 +255,7 @@ export function Avatar({
       geometryId,
       clip: clip.name,
       box: measurement.current.box,
+      seating: motion === "seated" ? placement : undefined,
     };
   });
   return (
@@ -235,9 +267,24 @@ export function Avatar({
         onSelect();
       }}
     >
-      <group scale={asset.scale}>
-        <group position={asset.offset}>
-          <primitive object={instance.scene} dispose={null} />
+      <group
+        position={
+          motion === "seated" && placement.compatible
+            ? placement.offset
+            : [0, 0, 0]
+        }
+        rotation={[
+          0,
+          motion === "seated" && placement.compatible
+            ? (placement.facing * Math.PI) / 2
+            : 0,
+          0,
+        ]}
+      >
+        <group scale={asset.scale}>
+          <group position={asset.offset}>
+            <primitive object={instance.scene} dispose={null} />
+          </group>
         </group>
       </group>
     </group>
