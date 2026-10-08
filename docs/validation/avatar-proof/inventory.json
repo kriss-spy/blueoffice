@@ -1,0 +1,263 @@
+{
+  "sourceHash": "9986383537011aca594b5ce8129ef87e325f559583ed77d975170127f5fecc64",
+  "normalizedHash": "a93f46c9f39c5bc51047f7301811e0affafebb8eac966fe30cac6e5e97f255ca",
+  "sourceBytes": 5083936,
+  "normalizedBytes": 7705780,
+  "normalization": {
+    "version": 1,
+    "separatedAnimationInputs": 2674,
+    "quaternionSamples": 42098
+  },
+  "clips": [
+    {
+      "name": "Cafe_Reaction",
+      "channels": 120
+    },
+    {
+      "name": "Cafe_Idle",
+      "channels": 118
+    },
+    {
+      "name": "Cafe_Walk",
+      "channels": 114
+    },
+    {
+      "name": "Formation_Idle",
+      "channels": 116
+    },
+    {
+      "name": "Formation_Pickup",
+      "channels": 115
+    },
+    {
+      "name": "Exs_Cutin",
+      "channels": 120
+    },
+    {
+      "name": "Exs",
+      "channels": 119
+    },
+    {
+      "name": "Victory_End",
+      "channels": 116
+    },
+    {
+      "name": "Victory_Start",
+      "channels": 122
+    },
+    {
+      "name": "Normal_Idle",
+      "channels": 96
+    },
+    {
+      "name": "Normal_Attack_Delay",
+      "channels": 104
+    },
+    {
+      "name": "Normal_Attack_End",
+      "channels": 90
+    },
+    {
+      "name": "Normal_Attack_Ing",
+      "channels": 106
+    },
+    {
+      "name": "Normal_Attack_Start",
+      "channels": 108
+    },
+    {
+      "name": "Normal_Callsign",
+      "channels": 107
+    },
+    {
+      "name": "Normal_Reload",
+      "channels": 116
+    },
+    {
+      "name": "Kneel_Idle",
+      "channels": 122
+    },
+    {
+      "name": "Kneel_Attack_Delay",
+      "channels": 97
+    },
+    {
+      "name": "Kneel_Attack_End",
+      "channels": 98
+    },
+    {
+      "name": "Kneel_Attack_Ing",
+      "channels": 100
+    },
+    {
+      "name": "Kneel_Attack_Start",
+      "channels": 100
+    },
+    {
+      "name": "Kneel_Reload",
+      "channels": 102
+    },
+    {
+      "name": "Stand_Idle",
+      "channels": 97
+    },
+    {
+      "name": "Stand_Attack_Delay",
+      "channels": 101
+    },
+    {
+      "name": "Stand_Attack_End",
+      "channels": 103
+    },
+    {
+      "name": "Stand_Attack_Ing",
+      "channels": 103
+    },
+    {
+      "name": "Stand_Attack_Start",
+      "channels": 111
+    },
+    {
+      "name": "Stand_Reload",
+      "channels": 103
+    },
+    {
+      "name": "Move_End_Kneel",
+      "channels": 100
+    },
+    {
+      "name": "Move_End_Normal",
+      "channels": 101
+    },
+    {
+      "name": "Move_End_Stand",
+      "channels": 109
+    },
+    {
+      "name": "Move_Ing",
+      "channels": 99
+    },
+    {
+      "name": "Move_Jump",
+      "channels": 107
+    },
+    {
+      "name": "Vital_Death",
+      "channels": 108
+    },
+    {
+      "name": "Vital_Dying_Ing",
+      "channels": 121
+    },
+    {
+      "name": "Vital_Panic",
+      "channels": 113
+    },
+    {
+      "name": "Vital_Retreat",
+      "channels": 120
+    },
+    {
+      "name": "Public01",
+      "channels": 105
+    }
+  ],
+  "materials": [
+    {
+      "name": "Yuuka_Original_Body",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_Face",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_Hair",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_Eyebrow",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_401",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_402",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_404",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_502",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_504",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_604",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth_Mouth_704",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_EyeMouth",
+      "alphaMode": "MASK",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_Calculator",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_Weapon",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    },
+    {
+      "name": "Yuuka_Original_Halo",
+      "alphaMode": "OPAQUE",
+      "doubleSided": true
+    }
+  ],
+  "structuralValidation": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "provenance": {
+    "sourceUrl": "https://github.com/lihaohong6/BlueArchiveModels/blob/525ae0faeb0a89f54ef4023f3be3692dcb529e51/Yuuka.glb",
+    "sourceCommit": "525ae0faeb0a89f54ef4023f3be3692dcb529e51",
+    "redistributionAllowed": null,
+    "permissionReference": null,
+    "scope": "Local technical inspection; no character bytes in the software repository."
+  },
+  "permissionEvidence": {
+    "checkedAt": "2026-10-08",
+    "repositoryOwner": "lihaohong6",
+    "geometryTextureCreator": "unverified",
+    "rightsHolder": "unverified",
+    "license": null,
+    "permissionReference": null,
+    "evidence": "GitHub repository API reports license=null; pinned root tree has no README or license file. Public availability is not distribution permission.",
+    "intendedUse": "Local technical inspection only; public bundled/downloadable character pack remains blocked on permission evidence."
+  }
+}
