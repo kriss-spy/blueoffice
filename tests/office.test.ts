@@ -1015,48 +1015,62 @@ for (const scenario of ["missing-request", "truncated", "interim-gap"]) {
   });
 }
 
-test("truncated streaming checkpoint holds a credential prefix and continues the same assistant segment", async (t) => {
-  const { office, agent, current, target, factory, store } = await setup(
-    t,
-    "checkpoint-stream",
-  );
-  const launch = factory.launch.bind(factory);
-  factory.launch = async (agent) => {
-    const result = await launch(agent);
-    result.options.env!.BLUEOFFICE_PROXY_KEY = "synthetic-review-key";
-    return result;
-  };
-  const published: string[] = [];
-  office.on("change", () => {
-    const snapshot = office.snapshot();
-    published.push(JSON.stringify(snapshot));
-    published.push(
-      JSON.stringify(store.since(Math.max(0, snapshot.revision - 1))),
+for (const scenario of [
+  "checkpoint-stream",
+  "checkpoint-tool-prefix",
+  "checkpoint-tool",
+])
+  test(`${scenario} preserves sealed segments and redaction through a truncated checkpoint`, async (t) => {
+    const { office, agent, current, target, factory, store } = await setup(
+      t,
+      scenario,
     );
+    const launch = factory.launch.bind(factory);
+    factory.launch = async (agent) => {
+      const result = await launch(agent);
+      result.options.env!.BLUEOFFICE_PROXY_KEY = "synthetic-review-key";
+      return result;
+    };
+    const published: string[] = [];
+    office.on("change", () => {
+      const snapshot = office.snapshot();
+      published.push(JSON.stringify(snapshot));
+      published.push(
+        JSON.stringify(store.since(Math.max(0, snapshot.revision - 1))),
+      );
+    });
+    await office.start(agent.id);
+    await office.prompt(
+      agent.id,
+      randomUUID(),
+      target(),
+      "stream across checkpoint",
+    );
+    await until(
+      () => current().work === "unknown" && current().freshness === "current",
+    );
+    const before = current().messages.filter((m) => m.role === "assistant");
+    const partial = before.at(-1)!;
+    assert.equal(before.length, scenario === "checkpoint-tool-prefix" ? 2 : 1);
+    assert.equal(
+      partial.text,
+      scenario === "checkpoint-tool" ? "Checking the files." : "Hello ",
+    );
+    if (scenario === "checkpoint-tool")
+      assert.equal(current().activeMessageId, null);
+    else assert.equal(current().activeMessageId, partial.id);
+    await writeFile(join(agent.profileHome, "continue-recovery"), "continue");
+    await until(() => current().work === "completed" && !current().busy);
+    const answers = current().messages.filter((m) => m.role === "assistant");
+    assert.equal(answers.length, scenario === "checkpoint-stream" ? 1 : 2);
+    if (scenario !== "checkpoint-tool")
+      assert.equal(answers.at(-1)!.id, partial.id);
+    assert.equal(
+      answers.at(-1)!.text,
+      scenario === "checkpoint-tool" ? "Done." : "Hello [redacted] world",
+    );
+    if (scenario !== "checkpoint-stream")
+      assert.equal(answers[0].text, "Checking the files.");
+    for (const value of published)
+      assert.doesNotMatch(value, /synthetic-|review-key/);
   });
-  await office.start(agent.id);
-  await office.prompt(
-    agent.id,
-    randomUUID(),
-    target(),
-    "stream across checkpoint",
-  );
-  await until(
-    () => current().work === "unknown" && current().freshness === "current",
-  );
-  assert.equal(
-    current().messages.filter((m) => m.role === "assistant").length,
-    1,
-  );
-  const partial = current().messages.find((m) => m.role === "assistant")!;
-  assert.equal(partial.text, "Hello ");
-  assert.equal(current().activeMessageId, partial.id);
-  await writeFile(join(agent.profileHome, "continue-recovery"), "continue");
-  await until(() => current().work === "completed" && !current().busy);
-  const answers = current().messages.filter((m) => m.role === "assistant");
-  assert.equal(answers.length, 1);
-  assert.equal(answers[0].id, partial.id);
-  assert.equal(answers[0].text, "Hello [redacted] world");
-  for (const value of published)
-    assert.doesNotMatch(value, /synthetic-|review-key/);
-});

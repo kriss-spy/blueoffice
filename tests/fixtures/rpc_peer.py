@@ -55,11 +55,11 @@ def event(kind, payload=None):
         seq += 1
         data = {"type": kind, "session_id": session, "seq": seq, "payload": payload or {}}
         replay_events.append(data)
-        if scenario == "checkpoint-stream" and kind == "message.delta" and payload.get("checkpoint_omit"):
+        if scenario in ("checkpoint-stream", "checkpoint-tool-prefix", "checkpoint-tool") and kind == "message.delta" and payload.get("checkpoint_omit"):
             return
         if scenario in ("truncated", "interim-gap") and busy and kind not in ("recovery.trigger", "message.interim"):
             return
-        if scenario in ("truncated", "interim-gap", "checkpoint-stream") and kind == "recovery.trigger":
+        if scenario in ("truncated", "interim-gap", "checkpoint-stream", "checkpoint-tool-prefix", "checkpoint-tool") and kind == "recovery.trigger":
             truncated_through = seq - 1
             replay_events[:] = [data]
         if scenario == "replay-order" and kind == "message.delta" and not omitted_delta:
@@ -94,17 +94,22 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
-    if scenario == "checkpoint-stream":
+    if scenario in ("checkpoint-stream", "checkpoint-tool-prefix", "checkpoint-tool"):
         key = os.environ["BLUEOFFICE_PROXY_KEY"]
-        event("message.delta", {"text": "Hello "})
-        inflight = {"user": prompt, "assistant": "Hello " + key[:10], "streaming": True}
-        event("message.delta", {"text": key[:10], "checkpoint_omit": True})
+        prefix = "Checking the files." if scenario != "checkpoint-stream" else ""
+        if prefix:
+            event("message.delta", {"text": prefix})
+            event("message.interim", {"text": prefix, "already_streamed": True})
+        if scenario != "checkpoint-tool":
+            event("message.delta", {"text": "Hello "})
+        inflight = {"user": prompt, "assistant": prefix + ("" if scenario == "checkpoint-tool" else "Hello " + key[:10]), "streaming": True}
+        event("message.delta", {"text": "" if scenario == "checkpoint-tool" else key[:10], "checkpoint_omit": True})
         event("recovery.trigger")
         deadline = time.monotonic() + 10
         while not (profile / "continue-recovery").exists() and time.monotonic() < deadline:
             time.sleep(0.01)
-        event("message.delta", {"text": key[10:] + " world"})
-        event("message.complete", {"text": "Hello " + key + " world", "status": "complete"})
+        event("message.delta", {"text": "Done." if scenario == "checkpoint-tool" else key[10:] + " world"})
+        event("message.complete", {"text": "Done." if scenario == "checkpoint-tool" else "Hello " + key + " world", "status": "complete"})
         inflight = None
         busy = False
         event("session.info", {"running": False})

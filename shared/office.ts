@@ -21,6 +21,7 @@ export interface Receipt {
   at: string;
 }
 export interface ChatItem {
+  streamed?: boolean;
   id: string;
   epoch: string;
   turnId: string;

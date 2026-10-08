@@ -1,4 +1,4 @@
-import { recoverHistory } from "./recovery.js";
+import { recoverHistory, prepareRecoverySnapshot } from "./recovery.js";
 import type { EventBatch } from "../shared/events.js";
 import { parseApproval } from "./approval.js";
 import {
@@ -1038,8 +1038,9 @@ export class Office extends EventEmitter {
           snapshot.messages_omitted === true
         )
           throw new Error("Native checkpoint omitted public history.");
+        snapshot = prepareRecoverySnapshot(agent, snapshot);
         rpc.prepareCheckpoint(session, snapshot);
-        recoverHistory(agent, snapshot);
+        recoverHistory(agent, snapshot, true);
         agent.work = "unknown";
         agent.busy = snapshot.running === true;
         // Commit the checkpoint before releasing any buffered later events.
@@ -1215,6 +1216,7 @@ export class Office extends EventEmitter {
         break;
       case "message.delta":
         if (!agent.turnId) return;
+        this.assistant(agent).streamed = true;
         this.assistant(agent).text += text(payload.text, Infinity);
         this.assistant(agent).chunkIds.push(key);
         break;
@@ -1226,6 +1228,7 @@ export class Office extends EventEmitter {
         );
         message.text = text(payload.text, Infinity) || message.text;
         message.state = "complete";
+        message.streamed = payload.already_streamed !== false;
         agent.activeMessageId = null;
         message.chunkIds.push(key);
         break;
