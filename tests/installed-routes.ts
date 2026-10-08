@@ -210,6 +210,49 @@ try {
         cfg.providers[route.provider.slice(7)].base_url = route.endpoint;
         await writeFile(path, JSON.stringify(cfg));
         record.checks.push("reject changed endpoint before launch");
+        for (const override of [
+          {
+            api_mode:
+              route.apiMode === "chat_completions"
+                ? "codex_responses"
+                : "chat_completions",
+          },
+          {
+            fallback_chain: [
+              {
+                provider: "custom",
+                model: "unverified",
+                base_url: "https://example.invalid/v1",
+                api_key: "synthetic-canary",
+              },
+            ],
+          },
+          { key_env: "UNVERIFIED_KEY" },
+          { api_key_env: "UNVERIFIED_KEY" },
+          { extra_body: { model: "unverified" } },
+        ]) {
+          const modified = structuredClone(cfg);
+          Object.assign(modified.auxiliary.compression, override);
+          await writeFile(path, JSON.stringify(modified));
+          await assert.rejects(
+            office.start(id),
+            /effective model.*verified BlueOffice route/,
+          );
+        }
+        const modified = structuredClone(cfg);
+        modified.delegation.request_overrides = {
+          extra_body: { model: "unverified" },
+        };
+        await writeFile(path, JSON.stringify(modified));
+        await assert.rejects(
+          office.start(id),
+          /effective model.*verified BlueOffice route/,
+        );
+        await writeFile(path, JSON.stringify(cfg));
+        record.checks.push(
+          "reject auxiliary transport, fallback, credentials and body overrides",
+          "reject delegation request overrides",
+        );
         record.checks.push(
           "failure classes",
           "quota not retried",

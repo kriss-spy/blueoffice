@@ -4,6 +4,7 @@ import {
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { FrameRedactor } from "./redaction.js";
 
 export type Frame = {
   jsonrpc: "2.0";
@@ -106,11 +107,9 @@ export class RpcChild extends EventEmitter {
         new RpcFailure("The owned runtime command channel closed.", true),
       ),
     );
-    const secret = launch.options.env?.BLUEOFFICE_PROXY_KEY;
-    const redact = (_key: string, value: unknown) =>
-      typeof value === "string" && secret
-        ? value.replaceAll(secret, "[redacted]")
-        : value;
+    const redactor = new FrameRedactor(
+      launch.options.env?.BLUEOFFICE_PROXY_KEY,
+    );
     let buffer = "";
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => {
@@ -128,31 +127,39 @@ export class RpcChild extends EventEmitter {
         buffer = buffer.slice(newline + 1);
         if (!line.trim()) continue;
         try {
-          const frame = JSON.parse(line, redact) as Frame;
-          if (!frame || frame.jsonrpc !== "2.0" || typeof frame !== "object")
-            throw new Error();
+          const rawFrame = JSON.parse(line) as Frame;
           if (
-            frame.method === "event" &&
-            frame.params?.type === "gateway.ready"
-          ) {
-            clearTimeout(readyTimer);
-            readyResolve();
-          }
-          if (!frame.method && typeof frame.id === "number") {
-            const pending = this.pending.get(frame.id);
-            if (pending) {
-              this.pending.delete(frame.id);
-              clearTimeout(pending.timer);
-              // Raw upstream errors can contain credentials or private arguments.
-              if (frame.error)
-                pending.reject(
-                  new RpcFailure(
-                    `Hermes rejected the operation (RPC ${Number.isInteger(frame.error.code) ? frame.error.code : "unknown"}).`,
-                  ),
-                );
-              else pending.resolve(frame.result);
+            !rawFrame ||
+            rawFrame.jsonrpc !== "2.0" ||
+            typeof rawFrame !== "object"
+          )
+            throw new Error();
+          for (const frame of redactor.frames(rawFrame)) {
+            if (!frame || frame.jsonrpc !== "2.0" || typeof frame !== "object")
+              throw new Error();
+            if (
+              frame.method === "event" &&
+              frame.params?.type === "gateway.ready"
+            ) {
+              clearTimeout(readyTimer);
+              readyResolve();
             }
-          } else this.emit("frame", frame);
+            if (!frame.method && typeof frame.id === "number") {
+              const pending = this.pending.get(frame.id);
+              if (pending) {
+                this.pending.delete(frame.id);
+                clearTimeout(pending.timer);
+                // Raw upstream errors can contain credentials or private arguments.
+                if (frame.error)
+                  pending.reject(
+                    new RpcFailure(
+                      `Hermes rejected the operation (RPC ${Number.isInteger(frame.error.code) ? frame.error.code : "unknown"}).`,
+                    ),
+                  );
+                else pending.resolve(frame.result);
+              }
+            } else this.emit("frame", frame);
+          }
         } catch {
           this.fail(
             new RpcFailure("Hermes emitted a malformed protocol frame.", true),
