@@ -612,3 +612,312 @@ test("native-shaped cancellation replay wins over absent delivered request", asy
   assert.equal(current().requests[0].reason, "timeout");
   assert.equal(attention(current()).length, 0);
 });
+
+test("permission schema preserves long inner IDs, only known choices, private metadata and known-key redaction", async (t) => {
+  const { office, agent, current, target, store, factory } = await setup(t);
+  const launch = factory.launch.bind(factory);
+  factory.launch = async (a) => {
+    const options = await launch(a);
+    options.options.env!.BLUEOFFICE_PROXY_KEY =
+      "synthetic-approval-private-key";
+    return options;
+  };
+  await office.start(agent.id);
+  await office.prompt(
+    agent.id,
+    randomUUID(),
+    target(),
+    "approval long id private metadata",
+  );
+  await until(() => attention(current()).length === 1);
+  const r = attention(current())[0];
+  assert.equal(r.innerId, "inner-" + "x".repeat(300));
+  assert.equal(r.responseSchema, "hermes.approval.v1");
+  assert.match(r.text, /TOKEN=\[redacted\]/);
+  assert.doesNotMatch(
+    JSON.stringify(store.agents()),
+    /synthetic-approval-private-key|PRIVATE_APPROVAL_METADATA/,
+  );
+  await office.interrupt(agent.id, target());
+  await until(() => !current().busy);
+  for (const prompt of [
+    "approval unknown choice",
+    "approval missing id",
+    "approval contradictory",
+  ]) {
+    await office.prompt(agent.id, randomUUID(), target(), prompt);
+    await until(() => attention(current()).length === 1);
+    const unsupported = attention(current())[0];
+    assert.equal(unsupported.kind, "unsupported");
+    assert.deepEqual(unsupported.choices, []);
+    await assert.rejects(
+      office.reply(agent.id, unsupported.id, randomUUID(), target(), {
+        choice: "once",
+      }),
+      /not supported/,
+    );
+    await office.interrupt(agent.id, target());
+    await until(() => !current().busy);
+  }
+});
+
+test("every advertised permission choice has a durable exact decision; duplicate and generic commands cannot grant", async (t) => {
+  const { office, agent, current, target, store } = await setup(t);
+  await office.start(agent.id);
+  for (const choice of ["deny", "once", "session", "always"] as const) {
+    await office.prompt(
+      agent.id,
+      randomUUID(),
+      target(),
+      "approval all choices",
+    );
+    await until(() => attention(current()).length === 1);
+    const r = attention(current())[0],
+      id = randomUUID();
+    const before = current().turnId;
+    await assert.rejects(
+      office.prompt(agent.id, randomUUID(), target(), "approve"),
+      /busy/,
+    );
+    await assert.rejects(
+      office.reply(agent.id, r.id, randomUUID(), target(), { answer: "yes" }),
+      /permissions offered/,
+    );
+    await assert.rejects(
+      office.reply(agent.id, r.id, randomUUID(), target(), {
+        choice,
+        all: true,
+      }),
+      /permissions offered/,
+    );
+    await assert.rejects(
+      office.reply(
+        agent.id,
+        r.id,
+        randomUUID(),
+        { ...target(), epoch: randomUUID() },
+        { choice },
+      ),
+      /conversation changed/,
+    );
+    const first = office.reply(agent.id, r.id, id, target(), { choice });
+    await assert.rejects(
+      office.reply(agent.id, r.id, randomUUID(), target(), { choice }),
+      /no longer open/,
+    );
+    const receipt = await first;
+    await office.reply(agent.id, r.id, id, target(), { choice });
+    await assert.rejects(
+      office.reply(agent.id, r.id, id, target(), {
+        choice: choice === "deny" ? "once" : "deny",
+      }),
+      /different operation/,
+    );
+    await until(() => !current().busy && !attention(current()).length);
+    assert.equal(current().turnId, before);
+    const saved = store.agents()[0].requests.at(-1)!;
+    assert.equal(saved.state, "resolved");
+    assert.deepEqual(saved.decision, {
+      choice,
+      commandId: id,
+      at: saved.decision!.at,
+      delivery: "delivered",
+    });
+    assert.match(receipt.message, /Decision recorded/);
+    const log = (
+      await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
+    )
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l));
+    assert.deepEqual(
+      log.filter((f) => !f.method && f.id === r.frameId).map((f) => f.result),
+      [{ choice }],
+    );
+  }
+});
+
+test("approval attention distinguishes delivered, expired, externally resolved and uncertain delivery", async (t) => {
+  const delayed = await setup(t, "delayed-answer");
+  await delayed.office.start(delayed.agent.id);
+  await delayed.office.prompt(
+    delayed.agent.id,
+    randomUUID(),
+    delayed.target(),
+    "approval",
+  );
+  await until(() => attention(delayed.current()).length === 1);
+  const r = attention(delayed.current())[0];
+  await delayed.office.reply(
+    delayed.agent.id,
+    r.id,
+    randomUUID(),
+    delayed.target(),
+    { choice: "deny" },
+  );
+  assert.equal(attention(delayed.current())[0].state, "delivered");
+  assert.equal(attention(delayed.current())[0].decision?.choice, "deny");
+  await until(
+    () => !delayed.current().busy && !attention(delayed.current()).length,
+  );
+  for (const [prompt, state] of [
+    ["expire approval", "expired"],
+    ["resolve approval", "resolved"],
+  ]) {
+    await delayed.office.prompt(
+      delayed.agent.id,
+      randomUUID(),
+      delayed.target(),
+      prompt,
+    );
+    await until(() => attention(delayed.current()).length === 1);
+    const request = attention(delayed.current())[0];
+    await until(
+      () =>
+        delayed.current().requests.at(-1)!.state === state &&
+        !delayed.current().busy,
+    );
+    assert.equal(delayed.current().requests.at(-1)!.decision, undefined);
+    await assert.rejects(
+      delayed.office.reply(
+        delayed.agent.id,
+        request.id,
+        randomUUID(),
+        delayed.target(),
+        { choice: "once" },
+      ),
+      /no longer open/,
+    );
+  }
+  const uncertain = await setup(t, "lost-reply-ack");
+  await uncertain.office.start(uncertain.agent.id);
+  await uncertain.office.prompt(
+    uncertain.agent.id,
+    randomUUID(),
+    uncertain.target(),
+    "approval",
+  );
+  await until(() => attention(uncertain.current()).length === 1);
+  const request = attention(uncertain.current())[0];
+  const receipt = await uncertain.office.reply(
+    uncertain.agent.id,
+    request.id,
+    randomUUID(),
+    uncertain.target(),
+    { choice: "deny" },
+  );
+  assert.equal(receipt.state, "unknown");
+  assert.equal(attention(uncertain.current())[0].decision?.delivery, "unknown");
+  assert.equal(attention(uncertain.current())[0].decision?.choice, "deny");
+  assert.equal(attention(uncertain.current())[0].freshness, "unknown");
+});
+
+test("secret, sudo and vault requests have only an unsupported interrupt path and retain no private fields", async (t) => {
+  const { office, agent, current, target, store } = await setup(t);
+  await office.start(agent.id);
+  for (const kind of ["secret", "sudo", "vault"]) {
+    await office.prompt(agent.id, randomUUID(), target(), kind);
+    await until(() => attention(current()).length === 1);
+    const r = attention(current())[0];
+    assert.equal(r.kind, "unsupported");
+    assert.doesNotMatch(
+      JSON.stringify(current()),
+      /PRIVATE_SECRET_CANARY|PRIVATE_SUDO_COMMAND|PRIVATE_VAULT_NAME/,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(store.agents()),
+      /PRIVATE_SECRET_CANARY|PRIVATE_SUDO_COMMAND|PRIVATE_VAULT_NAME/,
+    );
+    await assert.rejects(
+      office.reply(agent.id, r.id, randomUUID(), target(), {
+        value: "anything",
+      }),
+      /not supported/,
+    );
+    await office.interrupt(agent.id, target());
+    await until(
+      () => current().requests.at(-1)!.state === "expired" && !current().busy,
+    );
+  }
+});
+
+test("a permission from one agent cannot grant a concurrent permission to another", async (t) => {
+  const { office, agent, current, target, directory } = await setup(t);
+  const other = await office.create("Sora", directory);
+  await Promise.all([office.start(agent.id), office.start(other.id)]);
+  const otherCurrent = () =>
+    office.snapshot().agents.find((a) => a.id === other.id)!;
+  const otherTarget = {
+    epoch: otherCurrent().epoch!,
+    sessionId: otherCurrent().liveSessionId!,
+  };
+  await office.prompt(agent.id, randomUUID(), target(), "approval");
+  await office.prompt(other.id, randomUUID(), otherTarget, "approval");
+  await until(
+    () =>
+      attention(current()).length === 1 &&
+      attention(otherCurrent()).length === 1,
+  );
+  const r = attention(current())[0],
+    untouched = otherCurrent();
+  await assert.rejects(
+    office.reply(other.id, r.id, randomUUID(), otherTarget, { choice: "once" }),
+    /no longer open/,
+  );
+  await assert.rejects(
+    office.reply(
+      agent.id,
+      r.id,
+      randomUUID(),
+      { ...target(), sessionId: otherTarget.sessionId },
+      { choice: "once" },
+    ),
+    /conversation changed/,
+  );
+  await office.reply(agent.id, r.id, randomUUID(), target(), {
+    choice: "deny",
+  });
+  await until(() => current().work === "completed");
+  assert.deepEqual(otherCurrent(), untouched);
+});
+
+test("supervisor recovery retains an admitted permission decision with unknown delivery", async (t) => {
+  const { office, agent, current, target, store, directory, factory } =
+    await setup(t);
+  await office.start(agent.id);
+  await office.prompt(agent.id, randomUUID(), target(), "approval");
+  await until(() => attention(current()).length === 1);
+  const checkpoint = current(),
+    commandId = randomUUID();
+  checkpoint.requests[0].state = "delivered";
+  checkpoint.requests[0].decision = {
+    choice: "deny",
+    commandId,
+    at: new Date().toISOString(),
+    delivery: "pending",
+  };
+  store.save(checkpoint, "test.admitted-before-write", randomUUID());
+  const reopenedStore = new OfficeStore(join(directory, "office.db"));
+  t.after(() => reopenedStore.close());
+  const recovered = new Office(reopenedStore, factory);
+  const pending = attention(recovered.snapshot().agents[0])[0];
+  assert.equal(pending.decision?.choice, "deny");
+  assert.equal(pending.decision?.delivery, "unknown");
+  assert.equal(pending.freshness, "unknown");
+  await assert.rejects(
+    recovered.reply(agent.id, pending.id, randomUUID(), target(), {
+      choice: "once",
+    }),
+    /no longer open/,
+  );
+  const log = (
+    await readFile(join(agent.profileHome, "commands.jsonl"), "utf8")
+  )
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  assert.equal(
+    log.filter((f) => f.id === pending.frameId && !f.method).length,
+    0,
+  );
+});

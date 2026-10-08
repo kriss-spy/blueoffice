@@ -1,7 +1,7 @@
 /** Invoked only by python3 scripts/hermes_probe.py --suite office inside bubblewrap. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { access, writeFile } from "node:fs/promises";
+import { access, writeFile, mkdir, readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { HermesRuntime, type Installation } from "../server/runtime.js";
 import { OfficeStore } from "../server/store.js";
@@ -116,10 +116,26 @@ try {
   checks.push(
     "native final batch lock explicitly resolves the request without a response frame",
   );
-  await office.prompt(created.id, randomUUID(), target(), "PROBE_APPROVAL");
+  await mkdir("/tmp/blueoffice-approval-sentinel", { recursive: true });
+  await writeFile(
+    "/tmp/blueoffice-approval-sentinel/keep.txt",
+    "must survive denial",
+  );
+  await office.prompt(
+    created.id,
+    randomUUID(),
+    target(),
+    "PROBE_APPROVAL_REDACT",
+  );
   await until(() => attention(current()).some((r) => r.kind === "approval"));
   const permission = attention(current())[0];
   assert.notEqual(permission.frameId, permission.innerId);
+  assert.equal(permission.responseSchema, "hermes.approval.v1");
+  assert.ok(
+    !permission.text.includes("ghp_" + "A".repeat(36)),
+    "Native approval context must redact a credential-shaped canary",
+  );
+  assert.match(permission.text, /blueoffice-approval-sentinel/);
   await office.reply(created.id, permission.id, randomUUID(), target(), {
     choice: "deny",
   });
@@ -129,7 +145,36 @@ try {
       !current().busy &&
       !attention(current()).length,
   );
-  checks.push("real Hermes approval frame, denied reply and resolution");
+  assert.equal(
+    await readFile("/tmp/blueoffice-approval-sentinel/keep.txt", "utf8"),
+    "must survive denial",
+  );
+  assert.equal(store.agents()[0].requests.at(-1)!.decision?.choice, "deny");
+  checks.push(
+    "real Hermes redacted approval frame, durable denial and verified prevention of execution",
+  );
+  await office.prompt(
+    created.id,
+    randomUUID(),
+    target(),
+    "PROBE_APPROVAL_REDACT_ONCE",
+  );
+  await until(() => attention(current()).some((r) => r.kind === "approval"));
+  const allowed = attention(current())[0];
+  await office.reply(created.id, allowed.id, randomUUID(), target(), {
+    choice: "once",
+  });
+  await until(
+    () =>
+      current().work === "completed" &&
+      !current().busy &&
+      !attention(current()).length,
+  );
+  await assert.rejects(access("/tmp/blueoffice-approval-sentinel"));
+  assert.equal(store.agents()[0].requests.at(-1)!.decision?.choice, "once");
+  checks.push(
+    "real Hermes allow-once executes only the disposable sentinel action and persists the exact decision",
+  );
   await office.prompt(created.id, randomUUID(), target(), "PROBE_CANCEL");
   await until(() => attention(current()).length === 1);
   await office.interrupt(created.id, target());

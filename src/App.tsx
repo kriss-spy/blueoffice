@@ -20,6 +20,9 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [adoptionPath, setAdoptionPath] = useState("");
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<
+    { id: string } | undefined
+  >();
   const [acting, setActing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const agents = snapshot.agents;
@@ -328,7 +331,13 @@ export function App() {
               {agents
                 .filter((a) => attention(a).length)
                 .map((a) => (
-                  <button key={a.id} onClick={() => select(a.id)}>
+                  <button
+                    key={a.id}
+                    onClick={() => {
+                      select(a.id);
+                      setFocusRequest({ id: attention(a)[0].id });
+                    }}
+                  >
                     <strong>{a.name}</strong>
                     <span>
                       {attention(a).length} pending request
@@ -346,7 +355,13 @@ export function App() {
           )}
         </main>
         {agent ? (
-          <Chat key={agent.id} agent={agent} connected={connected} run={run} />
+          <Chat
+            key={agent.id}
+            agent={agent}
+            connected={connected}
+            run={run}
+            focusRequest={focusRequest}
+          />
         ) : (
           <aside className="empty-chat">
             <span aria-hidden="true">◌</span>

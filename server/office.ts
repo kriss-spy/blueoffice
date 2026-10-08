@@ -1,3 +1,9 @@
+import { parseApproval } from "./approval.js";
+import {
+  APPROVAL_CHOICES,
+  approvalLabel,
+  type ApprovalChoice,
+} from "../shared/approval.js";
 import {
   parseClarification,
   singleQuestion,
@@ -123,6 +129,8 @@ export class Office extends EventEmitter {
         for (const request of attention(agent)) {
           request.freshness = "unknown";
           request.reason = "Previous runtime ownership is unknown.";
+          if (request.decision?.delivery === "pending")
+            request.decision.delivery = "unknown";
           for (const q of request.questions)
             if (q.state === "pending") q.state = "unknown";
         }
@@ -815,7 +823,6 @@ export class Office extends EventEmitter {
       throw new OfficeError(
         "This request is no longer open or already has a delivered reply.",
       );
-    if (!request) throw new OfficeError("Request not found.", 404);
     const rpc = this.assertCurrent(agent, target);
     if (
       request.epoch !== target.epoch ||
@@ -830,6 +837,9 @@ export class Office extends EventEmitter {
       if (
         Object.keys(answer).length !== 1 ||
         typeof answer.choice !== "string" ||
+        !APPROVAL_CHOICES.includes(answer.choice as ApprovalChoice) ||
+        !request.innerId ||
+        request.responseSchema !== "hermes.approval.v1" ||
         !request.choices.includes(answer.choice)
       )
         throw new OfficeError(
@@ -888,6 +898,14 @@ export class Office extends EventEmitter {
     if (duplicate) return structuredClone(duplicate);
     const receipt = agent.receipts.at(-1)!;
     request.state = "delivered";
+    if (request.kind === "approval") {
+      request.decision = {
+        choice: answer.choice as ApprovalChoice,
+        commandId,
+        at: now(),
+        delivery: "pending",
+      };
+    }
     if (request.kind === "clarify") {
       if (request.questions.length) {
         const answers = answer.answers as Record<string, string>;
@@ -898,11 +916,15 @@ export class Office extends EventEmitter {
     this.changed(agent, "request.delivering");
     try {
       rpc.response(request.frameId, answer);
+      if (request.decision) request.decision.delivery = "delivered";
       receipt.state = "accepted";
-      receipt.message =
-        "Reply delivered. Waiting for Hermes to confirm the request is closed.";
+      receipt.message = request.decision
+        ? `Decision recorded: ${approvalLabel[request.decision.choice]}. Reply delivered; waiting for Hermes to confirm closure.`
+        : "Reply delivered. Waiting for Hermes to confirm the request is closed.";
       await this.reconcileRequests(agent, rpc);
     } catch {
+      if (request.decision) request.decision.delivery = "unknown";
+      request.freshness = "unknown";
       receipt.state = "unknown";
       receipt.message =
         "Reply delivery is uncertain. It will not be sent again automatically.";
@@ -981,9 +1003,11 @@ export class Office extends EventEmitter {
       if (agent.requests.some((r) => r.id === id)) return;
       const clarification =
         frame.method === "clarify" ? parseClarification(params) : undefined;
+      const approval =
+        frame.method === "approval" ? parseApproval(params) : undefined;
       const kind = clarification
         ? "clarify"
-        : frame.method === "approval"
+        : approval
           ? "approval"
           : "unsupported";
       const pending: PendingRequest = {
@@ -992,18 +1016,14 @@ export class Office extends EventEmitter {
         epoch: agent.epoch!,
         sessionId: agent.liveSessionId!,
         kind,
-        innerId: kind === "approval" ? text(params.request_id, 200) : undefined,
         text:
           kind === "unsupported"
             ? "This request uses an input format BlueOffice does not support yet. Interrupt to end the wait."
-            : kind === "approval"
-              ? [text(params.description), text(params.command)]
-                  .filter(Boolean)
-                  .join("\n")
-              : text(params.question),
+            : text(params.question),
         choices: kind === "unsupported" ? [] : strings(params.choices),
         questions: [],
         ...clarification,
+        ...approval,
         freshness: "current",
         state: "open",
         at: now(),
@@ -1145,7 +1165,8 @@ export class Office extends EventEmitter {
           (r) => r.epoch === agent.epoch && r.frameId === payload.id,
         );
         if (request && ["open", "delivered"].includes(request.state)) {
-          request.state = "expired";
+          request.state =
+            payload.reason === "resolved" ? "resolved" : "expired";
           request.freshness = "current";
           request.reason = text(payload.reason, 100);
         }

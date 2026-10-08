@@ -1,3 +1,4 @@
+import type { ApprovalDecision } from "./approval.js";
 import type { ModelId, RouteStatus } from "./routes.js";
 export type Lifecycle =
   "stopped" | "starting" | "ready" | "stopping" | "failed" | "unknown";
@@ -47,7 +48,8 @@ export interface PendingRequest {
   multiSelect?: boolean;
   allowFreeText?: boolean;
   answer?: string;
-  responseSchema?: "hermes.clarify.v1";
+  responseSchema?: "hermes.clarify.v1" | "hermes.approval.v1";
+  decision?: ApprovalDecision;
   freshness?: Freshness;
   epoch: string;
   sessionId: string;
