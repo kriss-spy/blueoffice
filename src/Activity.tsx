@@ -24,7 +24,6 @@ const value = (number: number | null) =>
 /** Pinned inspection is local UI state; it never changes the office foreground. */
 export function Activity({
   agents,
-  revision,
   connected,
 }: {
   agents: OfficeAgent[];
@@ -39,6 +38,25 @@ export function Activity({
   const [detailError, setDetailError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [knownSources, setKnownSources] = useState<string[]>([]);
+  const historyKey = JSON.stringify(
+    agents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      profile: agent.profileName,
+      home: agent.profileHome,
+      bindings: agent.conversations,
+      lifecycle: agent.lifecycle,
+      work: agent.work,
+      busy: agent.busy,
+      freshness: agent.freshness,
+      error: agent.error,
+      requests: attention(agent).map((request) => ({
+        id: request.id,
+        state: request.state,
+      })),
+    })),
+  );
   const [newAttention, setNewAttention] = useState<string[]>([]);
   const seenAttention = useRef(
     new Set(agents.flatMap((a) => attention(a).map((r) => `${a.id}:${r.id}`))),
@@ -71,6 +89,9 @@ export function Activity({
       read<HistoryList>(`/api/history?${params}`, controller.signal)
         .then((next) => {
           setList(next);
+          setKnownSources((old) => [
+            ...new Set([...old, ...next.sessions.map((s) => s.source)]),
+          ]);
           setError("");
         })
         .catch((cause) => {
@@ -89,7 +110,7 @@ export function Activity({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, revision, refresh]);
+  }, [query, historyKey, connected, refresh]);
   useEffect(() => {
     if (!selected) {
       setDetail(null);
@@ -118,7 +139,7 @@ export function Activity({
     field: K,
     next: HistoryQuery[K],
   ) => setQuery((old) => ({ ...old, [field]: next || undefined }));
-  const sources = [...new Set(list?.sessions.map((s) => s.source) ?? [])];
+  const sources = knownSources;
   return (
     <section className="history-panel" aria-label="Activity">
       <div className="history-heading">

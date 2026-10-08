@@ -52,13 +52,17 @@ test("Activity source filters, public search and keyboard inspection preserve ow
   await activity
     .getByRole("button", { name: "Automation", exact: true })
     .click();
-  await activity.getByLabel("State", { exact: true }).selectOption("error");
+  await activity
+    .getByRole("combobox", { name: "State", exact: true })
+    .selectOption("error");
   await expect(
     activity.getByRole("button", { name: /Scheduled summary/ }),
   ).toBeVisible();
   await expect(cli).toHaveCount(0);
   await activity.getByRole("button", { name: "All", exact: true }).click();
-  await activity.getByLabel("State", { exact: true }).selectOption("");
+  await activity
+    .getByRole("combobox", { name: "State", exact: true })
+    .selectOption("");
   await activity.getByLabel("Until (local time)").fill("2026-10-01T23:59");
   await expect(cli).toBeVisible();
   await expect(
@@ -163,11 +167,76 @@ test("malformed history gives scoped safe diagnostics and a missing pinned detai
     activity.getByRole("alert").filter({ hasText: /Check its database/ }),
   ).toBeVisible();
   await expect(
-    activity.getByRole("alert").filter({ hasText: /History is unavailable/ }),
+    activity
+      .getByRole("region", { name: "History inspection" })
+      .getByRole("alert"),
   ).toBeVisible();
   await expect(activity).not.toContainText("PRIVATE_HISTORY_CANARY");
   await expect(activity).not.toContainText(agent.profileHome);
   expect((await snapshot(page)).agents[0].liveSessionId).toBe(
     agent.liveSessionId,
   );
+});
+
+test("streamed message revisions do not repeatedly read all native history profiles", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  const agent = (await snapshot(page)).agents[0];
+  let listRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/history") listRequests++;
+  });
+  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  const activity = page.getByRole("region", { name: "Activity", exact: true });
+  await activity
+    .getByRole("button", { name: /CLI plan from yesterday/ })
+    .click();
+  await expect(
+    activity.getByText("Find the cobalt notebook", { exact: true }),
+  ).toBeVisible();
+  const before = listRequests;
+  const revisionBefore = (await snapshot(page)).revision;
+  await page.evaluate(
+    async ({ id, epoch, sessionId, commandId }) => {
+      const session = await (await fetch("/api/session")).json();
+      const response = await fetch(`/api/agents/${id}/prompt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-BlueOffice-CSRF": session.csrf,
+        },
+        body: JSON.stringify({
+          commandId,
+          target: { epoch, sessionId },
+          text: "history stream",
+        }),
+      });
+      if (!response.ok) throw new Error("Synthetic stream admission failed");
+    },
+    {
+      id: agent.id,
+      epoch: agent.epoch!,
+      sessionId: agent.liveSessionId!,
+      commandId: randomUUID(),
+    },
+  );
+  await expect
+    .poll(async () => {
+      const current = (await snapshot(page)).agents[0];
+      return current.work === "completed" && !current.busy;
+    })
+    .toBe(true);
+  await expect(activity.locator(".history-list")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const after = await snapshot(page);
+  expect(after.revision - revisionBefore).toBeGreaterThanOrEqual(8);
+  expect(listRequests - before).toBeLessThanOrEqual(3);
+  await expect(
+    activity.getByText("Find the cobalt notebook", { exact: true }),
+  ).toBeVisible();
 });

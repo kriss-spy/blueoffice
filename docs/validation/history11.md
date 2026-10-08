@@ -8,18 +8,22 @@ Run the installed synthetic reader probe with `python3 scripts/history_probe.py`
 
 The helper is rebound through Hermes' own `session_history.register` seam with its pure display dependencies. This does not import the complete gateway or replace agent/provider behavior. Only public user/assistant text and compact tool name/context/identity/time leave the boundary. Raw tool arguments/results, system prompts, reasoning sidecars and arbitrary display metadata are excluded. Known managed proxy credentials are additionally removed at the runtime boundary.
 
+The integrated worker browser run `npm run verify:ui -- tests/e2e/history.spec.ts` passed all three scenarios in `artifacts/verification/2026-10-08T14-50-07.831Z-ui-0da1df29/report.json`. A fourth regression scenario emits eight public deltas spaced beyond the list debounce and asserts that semantic status/binding updates, rather than every token/revision, determine history reads. Source choices are retained across filtered results.
+
+The three-scenario run exercised the parent-authenticated endpoints and modal, explicit local-time filtering, keyboard selection, public search, immutable foreground identifiers and no new RPC commands from inspection, separate attention with pinned history, and scoped malformed/missing diagnostics without paths or secret canaries. The earlier integrated browser run retained its failed traces: two test locator defects (implicit select labeling and ambiguous list/detail alert text) were corrected before the passing retry.
+
 ## Criterion accounting
 
-| Issue criterion | Evidence | Status before parent integration |
+| Issue criterion | Evidence | Worker acceptance status |
 |---|---|---|
-| Agent/profile/source/start/last activity/state listing; Chats/Automation/All; agent/profile/source/time/attention/error filters; supported public search | `tests/history.test.ts`; native source probe; `tests/e2e/history.spec.ts` browser scenarios | Service/native verified; mounted browser scenarios pending |
+| Agent/profile/source/start/last activity/state listing; Chats/Automation/All; agent/profile/source/time/attention/error filters; supported public search | `tests/history.test.ts`; native source probe; `tests/e2e/history.spec.ts` browser scenarios | Service/native and integrated browser verified |
 | Office/live/stored identity correlation including lazy rows; no history database writes | Service tests with distinct live/stored IDs and an appearing persisted row retain the same opaque selection key; native probe exact stored addressing and byte hash | Verified in isolated service/native fixtures |
-| Public conversation/tool timeline, provenance/ownership/capabilities/metrics and unavailable cost | Service detail tests; native public detail artifact; browser scenario | Native/service verified; visible detail pending |
-| Unknown unfinished outcome; observed external history; disabled unsupported controls | Service and native tests; browser scenario checks no runtime command frames from inspection | Service verified; browser pending |
-| Selecting history preserves foreground and pin on live events; new attention separate | Service read never mutates office; browser pin/new live clarification scenario | Service verified; browser pending |
-| Keyboard selection and actionable malformed/missing history without secrets | Invalid opaque-key/path rejection, malformed reader fixture tests; keyboard and malformed browser scenarios | Service verified; browser pending |
+| Public conversation/tool timeline, provenance/ownership/capabilities/metrics and unavailable cost | Service detail tests; native public detail artifact; browser scenario | Native/service and visible detail verified |
+| Unknown unfinished outcome; observed external history; disabled unsupported controls | Service and native tests; browser scenario checks no runtime command frames from inspection | Service and integrated browser verified |
+| Selecting history preserves foreground and pin on live events; new attention separate | Service read never mutates office; browser pin/new live clarification scenario | Service and integrated browser verified |
+| Keyboard selection and actionable malformed/missing history without secrets | Invalid opaque-key/path rejection, malformed reader fixture tests; keyboard and malformed browser scenarios | Service and integrated browser verified |
 
-Mechanical gate: `npm run check` passed for increment `bf23d26`, evidence `artifacts/verification/2026-10-08T14-38-06.861Z-check-2f057b43/report.json`. Parent integration changes require new combined checks. The initial worker commit deliberately does not edit Office/HTTP/App wiring. Parent owns authenticated endpoints, mounting and combined browser/integration acceptance. No ticket/release completion is claimed by this worker evidence alone.
+Mechanical gate: `npm run check` passed for increment `bf23d26`, evidence `artifacts/verification/2026-10-08T14-38-06.861Z-check-2f057b43/report.json`. Parent integration changes require new combined checks. The worker merged parent wiring in `e03daff` and its combined mechanical check passed at `artifacts/verification/2026-10-08T14-47-47.327Z-check-09f1d88b/report.json`. Parent owns authenticated endpoints, mounting, final combined full browser/integration gates and independent acceptance. The worker evidence accounts for #11 criteria; final acceptance and release completion remain parent responsibilities.
 
 ## Dependent contract findings
 
