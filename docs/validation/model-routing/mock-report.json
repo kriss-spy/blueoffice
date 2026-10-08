@@ -16,6 +16,8 @@
         "auxiliary",
         "delegation",
         "reject changed endpoint before launch",
+        "reject auxiliary transport, fallback, credentials and body overrides",
+        "reject delegation request overrides",
         "failure classes",
         "quota not retried",
         "secret redaction"
@@ -141,7 +143,7 @@
         "kind": "clarify",
         "questions": 0
       },
-      "verifiedAt": "2026-10-08T09:21:41.081Z"
+      "verifiedAt": "2026-10-08T09:36:49.748Z"
     },
     {
       "model": "muse-spark-1.3-contributor",
@@ -155,6 +157,8 @@
         "auxiliary",
         "delegation",
         "reject changed endpoint before launch",
+        "reject auxiliary transport, fallback, credentials and body overrides",
+        "reject delegation request overrides",
         "failure classes",
         "quota not retried",
         "secret redaction"
@@ -261,7 +265,7 @@
         "kind": "clarify",
         "questions": 0
       },
-      "verifiedAt": "2026-10-08T09:21:59.227Z"
+      "verifiedAt": "2026-10-08T09:37:11.040Z"
     }
   ],
   "provider_calls": [
