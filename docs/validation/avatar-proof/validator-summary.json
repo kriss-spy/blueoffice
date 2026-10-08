@@ -1,0 +1,20 @@
+{
+  "source": {
+    "errors": 181,
+    "warnings": 0,
+    "issueCodes": {
+      "UNUSED_OBJECT": 1,
+      "ACCESSOR_USAGE_OVERRIDE": 146,
+      "NODE_EMPTY": 7,
+      "ACCESSOR_ANIMATION_SAMPLER_OUTPUT_NON_NORMALIZED_QUATERNION": 35
+    }
+  },
+  "normalized": {
+    "errors": 0,
+    "warnings": 0,
+    "issueCodes": {
+      "UNUSED_OBJECT": 993,
+      "NODE_EMPTY": 7
+    }
+  }
+}

@@ -1,4 +1,16 @@
 import { createRoot } from "react-dom/client";
+import { lazy, Suspense } from "react";
 import { App } from "./App";
 import "./style.css";
-createRoot(document.getElementById("root")!).render(<App />);
+const SceneLab = lazy(() =>
+  import("./scene/SceneLab").then((module) => ({ default: module.SceneLab })),
+);
+createRoot(document.getElementById("root")!).render(
+  new URLSearchParams(location.search).get("scene") === "fixture" ? (
+    <Suspense fallback={<p>Opening the scene…</p>}>
+      <SceneLab />
+    </Suspense>
+  ) : (
+    <App />
+  ),
+);
