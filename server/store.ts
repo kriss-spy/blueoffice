@@ -1,3 +1,4 @@
+import type { CharacterPack } from "../shared/assets.js";
 import { randomUUID } from "node:crypto";
 import { agentChange, type OfficeEvent } from "../shared/events.js";
 import { DatabaseSync } from "node:sqlite";
@@ -27,6 +28,7 @@ export class OfficeStore {
     this.db = new DatabaseSync(path);
     chmodSync(path, 0o600);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
+      CREATE TABLE IF NOT EXISTS character_packs (asset_id TEXT NOT NULL, version TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(asset_id,version));
       CREATE TABLE IF NOT EXISTS agents (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY AUTOINCREMENT, event_key TEXT UNIQUE NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS commands (agent_id TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, PRIMARY KEY(agent_id,id));
@@ -40,6 +42,19 @@ export class OfficeStore {
     const columns = this.db.prepare("PRAGMA table_info(events)").all();
     if (!columns.some((c) => c.name === "body"))
       this.db.exec("ALTER TABLE events ADD COLUMN body TEXT");
+  }
+  characterPacks(): CharacterPack[] {
+    return this.db
+      .prepare("SELECT body FROM character_packs ORDER BY rowid")
+      .all()
+      .map((r) => JSON.parse(r.body as string));
+  }
+  saveCharacterPack(pack: CharacterPack) {
+    this.db
+      .prepare(
+        "INSERT INTO character_packs VALUES (?,?,?) ON CONFLICT(asset_id,version) DO UPDATE SET body=excluded.body",
+      )
+      .run(pack.ref.assetId, pack.ref.version, JSON.stringify(pack));
   }
   journalId(): string {
     return this.db

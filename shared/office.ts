@@ -1,3 +1,4 @@
+import type { AssetRef } from "./assets.js";
 import type { ApprovalDecision } from "./approval.js";
 import type { ModelId, RouteStatus } from "./routes.js";
 export type Lifecycle =
@@ -92,6 +93,7 @@ export interface OfficeAgent {
   profileHome: string;
   workspace: string;
   avatarId: string;
+  avatar?: AssetRef | null;
   deskId: string | null;
   lifecycle: Lifecycle;
   work: Work;

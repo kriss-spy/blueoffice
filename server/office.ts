@@ -1,3 +1,4 @@
+import type { AssetRef } from "../shared/assets.js";
 import { recoverHistory, prepareRecoverySnapshot } from "./recovery.js";
 import { availableDesk } from "../shared/scene.js";
 import type { EventBatch } from "../shared/events.js";
@@ -53,6 +54,13 @@ export class OfficeError extends Error {
 }
 
 export class Office extends EventEmitter {
+  assignAvatar(id: string, ref: AssetRef | null) {
+    const agent = this.get(id);
+    agent.avatar = ref;
+    agent.avatarId = ref?.assetId ?? "unassigned";
+    this.changed(agent, "avatar.assigned");
+    return agent;
+  }
   private agents = new Map<string, OfficeAgent>();
   private runtimes = new Map<string, RpcChild>();
   private closing = false;

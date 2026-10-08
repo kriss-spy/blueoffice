@@ -20,6 +20,7 @@ import {
   disposeAvatarInstance,
   resolveAvatarClip,
   type AvatarAsset,
+  type AvatarMotion,
 } from "./avatar";
 
 export type Metrics = {
@@ -170,7 +171,7 @@ export function Avatar({
   id: string;
   position: Point;
   rotation: QuarterTurn;
-  motion: ProofMotion;
+  motion: AvatarMotion;
   playing: boolean;
   time: number;
   metrics: React.RefObject<Metrics>;
@@ -179,7 +180,11 @@ export function Avatar({
   const instance = useMemo(() => cloneAvatar(asset), [asset]);
   useEffect(() => () => disposeAvatarInstance(instance), [instance]);
   const measurement = useRef({ elapsed: 1, box: [] as number[] });
-  const { clip } = resolveAvatarClip(asset.gltf.animations, motion);
+  const { clip } = resolveAvatarClip(
+    asset.gltf.animations,
+    motion,
+    asset.clips,
+  );
   useEffect(() => {
     instance.mixer.stopAllAction();
     const action = instance.mixer.clipAction(clip);

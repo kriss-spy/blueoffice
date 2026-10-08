@@ -478,8 +478,8 @@ export function App() {
             </select>
           </label>
           <p className="form-note">
-            Choose an existing folder. Character and workstation assignments
-            will follow in the room editor.
+            Choose an existing folder. Use Characters in the office to assign a
+            reviewed character after creating the assistant.
           </p>
           {error ? (
             <p role="alert" className="inline-error">
