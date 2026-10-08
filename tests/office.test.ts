@@ -359,6 +359,11 @@ test("recovery marks unresolved work unknown and never signals or adopts a previ
   assert.equal(record.receipts.at(-1)!.state, "unknown");
   await assert.rejects(recovered.stop(agent.id), /No process was signaled/);
   await assert.rejects(recovered.start(agent.id)); // Live original child retains its lease.
+  assert.equal(
+    attention(recovered.snapshot().agents[0])[0].id,
+    record.requests[0].id,
+  );
+  assert.equal(recovered.snapshot().agents[0].epoch, record.epoch);
   assert.equal(current().lifecycle, "ready");
   await office.stop(agent.id);
   await recovered.start(agent.id);

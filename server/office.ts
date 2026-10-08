@@ -454,6 +454,10 @@ export class Office extends EventEmitter {
       throw new OfficeError(
         "This agent already has a runtime or a lifecycle operation in progress.",
       );
+    const previousBinding = {
+      epoch: agent.epoch,
+      liveSessionId: agent.liveSessionId,
+    };
     agent.epoch = randomUUID();
     agent.liveSessionId = null;
     agent.lifecycle = "starting";
@@ -461,10 +465,6 @@ export class Office extends EventEmitter {
     agent.error = null;
     agent.work = "idle";
     agent.busy = false;
-    for (const pending of attention(agent)) {
-      pending.state = "lost";
-      pending.reason = "Runtime was replaced.";
-    }
     this.changed(agent, "runtime.starting");
     let rpc: RpcChild | undefined;
     try {
@@ -526,12 +526,21 @@ export class Office extends EventEmitter {
       agent.lifecycle = "ready";
       agent.work = "idle";
       agent.freshness = "current";
+      for (const pending of attention(agent)) {
+        if (pending.epoch !== agent.epoch) {
+          pending.state = "lost";
+          pending.reason = "Runtime was replaced.";
+        }
+      }
       this.changed(agent, "runtime.ready");
     } catch (error) {
       agent.lifecycle = "stopping";
       if (rpc) await rpc.stop();
       this.runtimes.delete(id);
       agent.lifecycle = "failed";
+      agent.epoch = previousBinding.epoch;
+      agent.liveSessionId = previousBinding.liveSessionId;
+      for (const request of attention(agent)) request.freshness = "unknown";
       agent.freshness = "unknown";
       agent.busy = false;
       agent.error =
