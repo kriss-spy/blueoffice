@@ -68,8 +68,22 @@ export class Office extends EventEmitter {
   readonly layouts: LayoutService;
   layout(): LayoutSnapshot {
     const layout = this.layouts.snapshot();
-    for (const agent of this.agents.values())
+    const stored = new Map(
+      this.store.agents().map((agent) => [agent.id, agent]),
+    );
+    for (const agent of this.agents.values()) {
       agent.deskId = layout.assignments[agent.id] ?? null;
+      const saved = stored.get(agent.id);
+      if (saved) {
+        agent.avatar = saved.avatar;
+        agent.avatarId = saved.avatarId;
+      }
+    }
+    return layout;
+  }
+  layoutChanged() {
+    const layout = this.layout();
+    this.emit("change");
     return layout;
   }
   assertLayoutWritable() {

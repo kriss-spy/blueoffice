@@ -3,6 +3,7 @@ import { setupPlacementSchema } from "../shared/setup.js";
 import { assetRefSchema } from "../shared/assets.js";
 import { HistoryService, HistoryError } from "./history.js";
 import { LayoutError } from "./layout.js";
+import type { LayoutTransferService } from "./layout-transfer.js";
 import { MODEL_IDS } from "../shared/routes.js";
 import {
   createServer,
@@ -82,12 +83,18 @@ export function officeServer(
   office: Office,
   assets = resolve("dist"),
   characters?: CharacterRegistry,
+  transfers?: LayoutTransferService,
 ) {
   const history = new HistoryService({
     agents: () => office.snapshot().agents,
     profiles: () => office.factory.historyProfiles(),
     read: (profile, request) => office.factory.historyRead(profile, request),
   });
+  const portableLayouts = () => {
+    if (!transfers)
+      throw new OfficeError("Portable layout support was not configured.", 503);
+    return transfers;
+  };
   const sessions = new Map<string, string>();
   const clients = new Map<
     ServerResponse,
@@ -298,6 +305,30 @@ export function officeServer(
         );
         if (historyRoute && req.method === "GET") {
           send(res, 200, await history.detail(historyRoute[1]));
+          return;
+        }
+        if (url.pathname === "/api/layout/export" && req.method === "GET") {
+          office.layout();
+          send(res, 200, portableLayouts().export());
+          return;
+        }
+        if (url.pathname === "/api/layout/preview" && req.method === "POST") {
+          const input = z
+            .object({ manifest: z.unknown(), bindings: z.unknown().optional() })
+            .strict()
+            .parse(await body(req));
+          send(
+            res,
+            200,
+            portableLayouts().preview(input.manifest, input.bindings),
+          );
+          return;
+        }
+        if (url.pathname === "/api/layout/import" && req.method === "POST") {
+          const input = await body(req);
+          office.assertLayoutWritable();
+          portableLayouts().import(input);
+          send(res, 200, office.layoutChanged());
           return;
         }
         if (url.pathname === "/api/layout" && req.method === "GET") {

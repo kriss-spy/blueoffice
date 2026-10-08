@@ -1338,3 +1338,8 @@ select {
   overflow-wrap: anywhere;
   line-height: 1.5;
 }
+
+.office-stage > .layout-transfer {
+  margin: 4px 12px;
+  flex-shrink: 0;
+}

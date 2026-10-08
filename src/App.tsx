@@ -12,6 +12,7 @@ import { attention, presentAgent } from "../shared/office";
 import { command, connectOffice } from "./api";
 import { Activity } from "./Activity";
 import { OfficeOverview } from "./OfficeOverview";
+import { LayoutTransfer } from "./scene/LayoutTransfer";
 import { Chat } from "./Chat";
 import { NewAssignmentFields } from "./newAssignmentFields";
 import { completeWorkstation } from "../shared/layout";
@@ -294,6 +295,14 @@ export function App() {
               </button>
             </div>
           ))}
+          <LayoutTransfer
+            agents={agents}
+            connected={connected}
+            layout={snapshot.layout}
+            saved={(layout) =>
+              setSnapshot((current) => ({ ...current, layout }))
+            }
+          />
           <Suspense
             fallback={
               <div className="scene-loading">
