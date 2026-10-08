@@ -7,10 +7,30 @@ import {
   type Object3D,
   type Material,
   type Texture,
+  type AnimationClip,
 } from "three";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { clone } from "three/addons/utils/SkeletonUtils.js";
-import { inspectProofGlb, proofAvatar } from "../../shared/scene";
+import {
+  inspectProofGlb,
+  proofAvatar,
+  type ProofMotion,
+} from "../../shared/scene";
+
+export function resolveAvatarClip(clips: AnimationClip[], motion: ProofMotion) {
+  const name = motion === "missing" ? "Absent_Clip" : proofAvatar.clips[motion];
+  const requested = clips.find((clip) => clip.name === name);
+  const clip =
+    requested ?? clips.find((clip) => clip.name === proofAvatar.clips.idle);
+  if (!clip)
+    throw new Error(
+      "The standing idle clip is missing. Reload a validated character pack.",
+    );
+  return {
+    clip,
+    diagnostic: requested ? "" : `${name} unavailable · showing standing idle`,
+  };
+}
 
 export interface AvatarAsset {
   gltf: GLTF;

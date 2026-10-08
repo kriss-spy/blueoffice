@@ -6,8 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import {
-  attention,
-  status,
+  presentAgent,
   type OfficeAgent,
   type PendingRequest,
 } from "../shared/office";
@@ -19,11 +18,15 @@ export function Chat({
   connected,
   run,
   focusRequest,
+  acting,
+  settings,
 }: {
   agent: OfficeAgent;
   connected: boolean;
   run: (action: string, body?: unknown) => Promise<void>;
   focusRequest?: { id: string };
+  acting: boolean;
+  settings: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -58,7 +61,8 @@ export function Chat({
       window.removeEventListener("pagehide", savePosition);
     };
   }, [agent.id]);
-  const pending = attention(agent);
+  const view = presentAgent(agent, connected);
+  const pending = view.requests;
   const ready =
     connected && agent.lifecycle === "ready" && agent.freshness === "current";
   useEffect(() => {
@@ -140,11 +144,53 @@ export function Chat({
         <div>
           <h2>{agent.name}</h2>
           <p>
-            {connected ? status(agent) : "Connection lost — status unknown"}
+            {view.label}
+            {view.detail ? ` · ${view.detail}` : ""}
           </p>
         </div>
         <span className="chat-label">Conversation</span>
       </header>
+      <div className="chat-agent-actions">
+        <button
+          className="primary"
+          disabled={
+            !connected ||
+            acting ||
+            ["starting", "ready", "stopping"].includes(agent.lifecycle)
+          }
+          onClick={() => void run("start")}
+        >
+          {agent.lifecycle === "starting"
+            ? "Starting agent…"
+            : agent.lifecycle === "ready"
+              ? "Agent is running"
+              : "Start agent"}
+        </button>
+        <button disabled={!connected} onClick={settings}>
+          Agent settings
+        </button>
+        <details className="chat-agent-details">
+          <summary>Agent details</summary>
+          <dl>
+            <dt>Workspace</dt>
+            <dd>{agent.workspace}</dd>
+            <dt>Model</dt>
+            <dd>{agent.model}</dd>
+            <dt>Character</dt>
+            <dd>
+              {agent.avatarId === "unassigned"
+                ? "Not assigned yet"
+                : agent.avatarId}
+            </dd>
+            <dt>Workstation</dt>
+            <dd>{agent.deskId ?? "Not assigned yet"}</dd>
+          </dl>
+          <p>
+            Interrupt ends a task. Stop closes this agent’s runtime. Closing
+            this tab keeps it running.
+          </p>
+        </details>
+      </div>
       <div
         className="transcript"
         ref={transcript}
@@ -280,6 +326,29 @@ export function Chat({
           </p>
         ) : null}
       </form>
+      <details className="current-activity">
+        <summary>
+          Activity · {view.label}
+          {view.detail ? ` · ${view.detail}` : ""}
+        </summary>
+        <div>
+          {agent.messages
+            .filter(
+              (message) =>
+                message.turnId === agent.turnId && message.role === "tool",
+            )
+            .slice(-5)
+            .map((message) => (
+              <p key={message.id}>
+                {message.text} <small>({message.state})</small>
+              </p>
+            ))}
+          {!agent.messages.some(
+            (message) =>
+              message.turnId === agent.turnId && message.role === "tool",
+          ) && <p>No public tool activity in this turn.</p>}
+        </div>
+      </details>
       <footer className="chat-controls">
         <button
           disabled={!ready || (!agent.busy && !pending.length)}

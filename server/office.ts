@@ -1,4 +1,5 @@
 import { recoverHistory, prepareRecoverySnapshot } from "./recovery.js";
+import { availableDesk } from "../shared/scene.js";
 import type { EventBatch } from "../shared/events.js";
 import { parseApproval } from "./approval.js";
 import {
@@ -104,7 +105,14 @@ export class Office extends EventEmitter {
     readonly factory: RuntimeFactory,
   ) {
     super();
-    for (const agent of store.agents()) {
+    const savedAgents = store.agents();
+    const usedDesks = savedAgents.map((agent) => agent.deskId);
+    for (const agent of savedAgents) {
+      const needsDesk = !agent.deskId;
+      if (needsDesk) {
+        agent.deskId = availableDesk(usedDesks);
+        usedDesks.push(agent.deskId);
+      }
       agent.model ??= "glm-5.3-flash";
       // Upgrade snapshots from the initial DOM prototype without discarding their known binding.
       agent.conversations ??=
@@ -144,6 +152,8 @@ export class Office extends EventEmitter {
               "Supervisor restarted before acknowledgement. Not retried.";
           }
         this.changed(agent, "recovery");
+      } else if (needsDesk) {
+        this.changed(agent, "desk.assigned");
       }
     }
   }
@@ -238,7 +248,9 @@ export class Office extends EventEmitter {
       settingsVersion: 0,
       configHistory: [],
       avatarId: "unassigned",
-      deskId: null,
+      deskId: availableDesk(
+        [...this.agents.values()].map((agent) => agent.deskId),
+      ),
       lifecycle: "stopped",
       work: "idle",
       freshness: "current",

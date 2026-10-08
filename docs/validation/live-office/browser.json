@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "checks": [
+    "nameplate, workstation geometry and avatar geometry select the same persistent agent",
+    "keyboard chat resize changes framing scale without panning target or camera position",
+    "both target viewports retain visible room/cafe/chat; pointer resizing preserves target",
+    "tool with question remains paused, persistent and exact; attention works while avatar is out of frame and sends no command",
+    "terminal completion reacts once; starting next turn cancels prior completion; task interruption remains explicit",
+    "permission marker never grants; explicit Deny resolves; reload preserves identity/desk/status without replaying completion; missing assets show accurate placeholder"
+  ],
+  "errors": [],
+  "firstId": "db4dc67b-61b6-4c03-ab8b-257a35ea80d9",
+  "secondId": "4808304b-008c-4c38-806f-f3d2defcdbc4",
+  "completionTurn": "40e23230-551f-4a0e-be0f-aea2a289ceb3"
+}

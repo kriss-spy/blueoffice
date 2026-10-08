@@ -15,8 +15,18 @@ import { inspectProofGlb, workstation, worldAnchor } from "../shared/scene";
 import {
   cloneAvatar,
   disposeAvatarInstance,
+  resolveAvatarClip,
   type AvatarAsset,
 } from "../src/scene/avatar";
+
+test("unavailable reaction falls back to standing idle with an explicit diagnostic", () => {
+  const idle = new AnimationClip("Cafe_Idle", 1, []);
+  const result = resolveAvatarClip([idle], "react");
+  assert.equal(result.clip, idle);
+  assert.match(result.diagnostic, /Cafe_Reaction unavailable/);
+  assert.equal(resolveAvatarClip([idle], "idle").diagnostic, "");
+  assert.throws(() => resolveAvatarClip([], "idle"), /Reload a validated/);
+});
 
 function glb(overrides: Record<string, unknown> = {}) {
   const text = JSON.stringify({
