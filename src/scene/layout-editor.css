@@ -1,0 +1,108 @@
+.layout-editor {
+  border: 1px solid #b8cbd3;
+  background: #f7fafb;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 12px;
+  color: #273d48;
+}
+.layout-editor header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.layout-editor h3 {
+  margin: 0 0 6px;
+}
+.layout-editor p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.layout-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.layout-columns {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(210px, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+.layout-catalog {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.layout-plan {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 8px;
+  touch-action: none;
+}
+.layout-controls label {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.layout-controls input,
+.layout-controls select {
+  min-width: 0;
+  width: 100%;
+  padding: 6px;
+}
+.layout-editor fieldset {
+  border: 1px solid #c5d5dc;
+  border-radius: 6px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.layout-editor fieldset button {
+  margin: 3px;
+}
+.layout-editor [role="alert"],
+.layout-editor li {
+  color: #9a322a;
+  font-size: 13px;
+}
+.layout-inventory {
+  margin: 10px 0 0;
+  border: 1px solid #c6d5db;
+  padding: 10px;
+  border-radius: 8px;
+}
+.layout-inventory summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.layout-inventory ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.layout-inventory li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.layout-inventory li[data-located="true"] {
+  background: #d1edf2;
+}
+.layout-recovery {
+  color: #8e5d10;
+  font-size: 13px;
+}
+@media (max-width: 850px) {
+  .layout-columns {
+    grid-template-columns: 1fr;
+  }
+}

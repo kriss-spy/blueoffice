@@ -1,3 +1,4 @@
+import { type LayoutPlacement } from "../../shared/layout";
 import { workstation, type Point, type QuarterTurn } from "../../shared/scene";
 
 const palette = {
@@ -88,24 +89,24 @@ function Chair() {
         color={palette.frame}
       />
       <Cylinder
-        position={[0, 0.27, 0]}
+        position={[0, 0.17, 0]}
         radius={0.045}
-        height={0.36}
+        height={0.18}
         color={palette.frame}
       />
       <Box
-        position={[0, 0.46, 0]}
+        position={[0, 0.235, 0]}
         size={[0.55, 0.09, 0.53]}
         color={palette.blue}
       />
       <Box
-        position={[0, 0.73, 0.23]}
+        position={[0, 0.5, 0.23]}
         size={[0.55, 0.5, 0.09]}
         color={palette.blue}
       />
       <Box
-        position={[0, 0.51, 0.24]}
-        size={[0.08, 0.55, 0.06]}
+        position={[0, 0.35, 0.24]}
+        size={[0.08, 0.42, 0.06]}
         color={palette.frame}
       />
     </group>
@@ -116,11 +117,15 @@ export function Workstation({
   rotation,
   anchors,
   onSelect,
+  components,
+  highlighted = false,
 }: {
   position: Point;
   rotation: QuarterTurn;
   anchors: boolean;
   onSelect: () => void;
+  components?: LayoutPlacement["components"];
+  highlighted?: boolean;
 }) {
   return (
     <group
@@ -131,76 +136,104 @@ export function Workstation({
         onSelect();
       }}
     >
-      <Box
-        position={workstation.anchors.desk}
-        size={[1.85, 0.1, 0.9]}
-        color={palette.white}
-      />
-      {[-0.79, 0.79].map((x) => (
-        <group key={x}>
+      {components?.desk !== false && (
+        <>
           <Box
-            position={[x, 0.38, 0]}
-            size={[0.065, 0.74, 0.7]}
+            position={workstation.anchors.desk}
+            size={[1.85, 0.1, 0.9]}
+            color={palette.white}
+          />
+          {[-0.79, 0.79].map((x) => (
+            <group key={x}>
+              <Box
+                position={[x, 0.28, 0]}
+                size={[0.065, 0.54, 0.7]}
+                color={palette.frame}
+              />
+              <Box
+                position={[x, 0.05, 0]}
+                size={[0.11, 0.06, 0.76]}
+                color={palette.frame}
+              />
+            </group>
+          ))}
+          <Box
+            position={[0, 0.51, -0.31]}
+            size={[1.58, 0.16, 0.04]}
+            color={palette.blue}
+          />
+        </>
+      )}
+      {components?.computer !== false && (
+        <>
+          <Box
+            position={[0, 0.635, -0.18]}
+            size={[0.33, 0.035, 0.22]}
             color={palette.frame}
           />
           <Box
-            position={[x, 0.05, 0]}
-            size={[0.11, 0.06, 0.76]}
+            position={[0, 0.77, -0.22]}
+            size={[0.055, 0.3, 0.04]}
             color={palette.frame}
           />
-        </group>
-      ))}
-      <Box
-        position={[0, 0.71, -0.31]}
-        size={[1.58, 0.16, 0.04]}
-        color={palette.blue}
-      />
-      <Box
-        position={[0, 0.845, -0.18]}
-        size={[0.33, 0.035, 0.22]}
-        color={palette.frame}
-      />
-      <Box
-        position={[0, 0.98, -0.22]}
-        size={[0.055, 0.3, 0.04]}
-        color={palette.frame}
-      />
-      <Box
-        position={workstation.anchors.monitor}
-        size={[0.72, 0.43, 0.055]}
-        color={palette.ink}
-      />
-      <Box
-        position={[0, 1.15, -0.166]}
-        size={[0.66, 0.36, 0.008]}
-        color="#b9e6ed"
-      />
-      <Box
-        position={workstation.anchors.keyboard}
-        size={[0.53, 0.025, 0.2]}
-        color={palette.frame}
-      />
-      {[0, 1, 2].map((row) => (
-        <Box
-          key={row}
-          position={[0, 0.848, 0.2 + row * 0.045]}
-          size={[0.46, 0.008, 0.018]}
-          color={palette.white}
-        />
-      ))}
-      <Box
-        position={[0.41, 0.835, 0.27]}
-        size={[0.085, 0.03, 0.13]}
-        color={palette.white}
-      />
-      <Cylinder
-        position={[-0.65, 0.91, 0.22]}
-        radius={0.067}
-        height={0.17}
-        color="#eeb995"
-      />
-      <Plant position={[0.69, 0.82, -0.22]} scale={0.27} />
-      <Chair />
+          <Box
+            position={workstation.anchors.monitor}
+            size={[0.72, 0.43, 0.055]}
+            color={palette.ink}
+          />
+          <Box
+            position={[0, 0.94, -0.166]}
+            size={[0.66, 0.36, 0.008]}
+            color="#b9e6ed"
+          />
+        </>
+      )}
+      {components?.keyboard !== false && (
+        <>
+          <Box
+            position={workstation.anchors.keyboard}
+            size={[0.53, 0.025, 0.2]}
+            color={palette.frame}
+          />
+          {[0, 1, 2].map((row) => (
+            <Box
+              key={row}
+              position={[0, 0.668, 0.33 + row * 0.045]}
+              size={[0.46, 0.008, 0.018]}
+              color={palette.white}
+            />
+          ))}
+        </>
+      )}
+      {components?.desk !== false && (
+        <>
+          <Box
+            position={[0.41, 0.635, 0.38]}
+            size={[0.085, 0.03, 0.13]}
+            color={palette.white}
+          />
+          <Cylinder
+            position={[-0.65, 0.71, 0.22]}
+            radius={0.067}
+            height={0.17}
+            color="#eeb995"
+          />
+          <Plant position={[0.69, 0.62, -0.22]} scale={0.27} />
+        </>
+      )}
+      {components?.chair !== false && <Chair />}
+      {highlighted && (
+        <mesh position={[0, 0.01, 0.38]}>
+          <boxGeometry
+            args={[
+              workstation.footprint.width,
+              0.02,
+              workstation.footprint.depth,
+            ]}
+          />
+          <meshBasicMaterial color="#2d80c9" wireframe />
+        </mesh>
+      )}
       {anchors && (
         <>
           <mesh

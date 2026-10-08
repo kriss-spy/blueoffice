@@ -7,12 +7,7 @@ import {
   updateCompletionCues,
   type CompletionCues,
 } from "../../shared/presentation";
-import {
-  defaultDesks,
-  workstation,
-  worldAnchor,
-  type Point,
-} from "../../shared/scene";
+import { workstation, worldAnchor, type Point } from "../../shared/scene";
 import { assetKey } from "../../shared/assets";
 import { useCharacters } from "./characters";
 import { CharacterLibrary } from "./CharacterLibrary";
@@ -25,6 +20,14 @@ import {
   type Metrics,
   type CameraCommand,
 } from "./ScenePrimitives";
+import {
+  initialLayout,
+  completeWorkstation,
+  safeStandingPosition,
+  type LayoutDraft,
+  type LayoutSnapshot,
+} from "../../shared/layout";
+import { LayoutEditor } from "./LayoutEditor";
 import { Room, Workstation } from "./Room";
 import "./scene.css";
 import "./office-scene.css";
@@ -46,13 +49,51 @@ export function OfficeScene({
   selected,
   select,
   focusRequest,
+  layout: suppliedLayout,
+  onLayoutSaved,
+  locate,
 }: {
   agents: OfficeAgent[];
   connected: boolean;
   selected?: string;
   select: (id: string) => void;
   focusRequest: (agentId: string, requestId: string) => void;
+  layout?: LayoutSnapshot;
+  onLayoutSaved?: (layout: LayoutSnapshot) => void;
+  locate?: { deskId: string; token: number };
 }) {
+  const [savedLayout, setSavedLayout] = useState<LayoutSnapshot | undefined>(
+    suppliedLayout,
+  );
+  const [editing, setEditing] = useState<LayoutSnapshot>();
+  const [draft, setDraft] = useState<LayoutDraft>();
+  const [selectedDesk, setSelectedDesk] = useState<string>();
+  const [layoutError, setLayoutError] = useState("");
+  useEffect(() => {
+    if (suppliedLayout) setSavedLayout(suppliedLayout);
+  }, [suppliedLayout]);
+  useEffect(() => {
+    if (suppliedLayout) return;
+    let active = true;
+    void fetch("/api/layout")
+      .then(async (response) => {
+        if (!response.ok)
+          throw new Error(
+            "Layout is unavailable. Reconnect and reload the office.",
+          );
+        return response.json();
+      })
+      .then((value) => {
+        if (active) setSavedLayout(value);
+      })
+      .catch((error) => {
+        if (active) setLayoutError(error.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [suppliedLayout]);
+  const visibleLayout = draft ?? savedLayout ?? initialLayout(agents);
   const loaded = useCharacters(agents.map((a) => a.avatar));
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [command, setCommand] = useState<CameraCommand>({
@@ -104,10 +145,28 @@ export function OfficeScene({
     return () => clearTimeout(timer);
   }, [cues]);
   const occupants = agents.map((agent, i) => {
-    const desk = defaultDesks.find((desk) => desk.id === agent.deskId);
+    const assignedId = draft
+      ? draft.assignments[agent.id]
+      : savedLayout
+        ? savedLayout.assignments[agent.id]
+        : agent.deskId;
+    const desk = visibleLayout.placements.find(
+      (desk) => desk.id === assignedId && completeWorkstation(desk),
+    );
     const position: Point = desk
       ? worldAnchor(workstation.anchors.standing, desk.position, desk.rotation)
-      : [-4 + i, 0, 3.4];
+      : safeStandingPosition(
+          agents
+            .slice(0, i)
+            .filter(
+              (a) =>
+                !visibleLayout.placements.some(
+                  (p) =>
+                    p.id === visibleLayout.assignments[a.id] &&
+                    completeWorkstation(p),
+                ),
+            ).length,
+        );
     const entry = agent.avatar ? loaded[assetKey(agent.avatar)] : undefined;
     return {
       agent,
@@ -128,12 +187,41 @@ export function OfficeScene({
   });
   const isCueActive = (id: string, view: ReturnType<typeof presentAgent>) =>
     view.canCelebrate && cues[id]?.key === view.terminalKey;
-  const visibleDesks = defaultDesks.filter(
-    (desk, i) => i < 2 || agents.some((agent) => agent.deskId === desk.id),
-  );
+  const visibleDesks = visibleLayout.placements;
   const selectedCharacter = occupants.find((o) => o.agent.id === selected);
   const camera = (action: CameraCommand["action"]) =>
     setCommand((c) => ({ action, id: c.id + 1 }));
+  const locateDesk = (id: string) => {
+    const desk = visibleLayout.placements.find((p) => p.id === id);
+    if (!desk) return;
+    setSelectedDesk(id);
+    // The camera owns the elevated view and pan/zoom; Locate requests its target.
+    setCommand(
+      (c) =>
+        ({
+          action: "locate",
+          target: desk.position,
+          id: c.id + 1,
+        }) as unknown as CameraCommand,
+    );
+  };
+  useEffect(() => {
+    if (!locate) return;
+    const desk = (savedLayout?.placements ?? []).find(
+      (p) => p.id === locate.deskId,
+    );
+    if (desk) {
+      setSelectedDesk(desk.id);
+      setCommand(
+        (c) =>
+          ({
+            action: "locate",
+            target: desk.position,
+            id: c.id + 1,
+          }) as unknown as CameraCommand,
+      );
+    }
+  }, [locate, savedLayout]);
   return (
     <section className="live-scene" aria-label="Live office">
       <div className="live-scene-heading">
@@ -145,6 +233,17 @@ export function OfficeScene({
               : "Add an assistant to bring the office to life."}
           </p>
         </div>
+        <button
+          disabled={!connected || !savedLayout || !!editing}
+          onClick={() => {
+            if (savedLayout) {
+              setEditing(structuredClone(savedLayout));
+              setDraft(structuredClone(savedLayout));
+            }
+          }}
+        >
+          Edit office
+        </button>
         <button disabled={!connected} onClick={() => setLibraryOpen(true)}>
           Characters
         </button>
@@ -171,10 +270,19 @@ export function OfficeScene({
                 key={desk.id}
                 position={desk.position}
                 rotation={desk.rotation}
-                anchors={false}
+                components={desk.components}
+                highlighted={selectedDesk === desk.id}
+                anchors={!!editing}
                 onSelect={() => {
+                  if (editing) {
+                    setSelectedDesk(desk.id);
+                    return;
+                  }
                   const agent = agents.find(
-                    (agent) => agent.deskId === desk.id,
+                    (agent) =>
+                      (savedLayout
+                        ? savedLayout.assignments[agent.id]
+                        : agent.deskId) === desk.id,
                   );
                   if (agent) select(agent.id);
                 }}
@@ -254,7 +362,7 @@ export function OfficeScene({
                   <strong>{agent.name}</strong>
                   <small>{view.label}</small>
                   {view.detail && <small>{view.detail}</small>}
-                  {!desk && <small>Workstation missing</small>}
+                  {!desk && <small>Unassigned · safe standing</small>}
                   {diagnostic && (
                     <small className="character-diagnostic" title={diagnostic}>
                       {diagnostic.startsWith("Loading")
@@ -334,6 +442,9 @@ export function OfficeScene({
       <output
         hidden
         data-office-scene={JSON.stringify({
+          layout: visibleLayout,
+          editing: !!editing,
+          selectedDesk,
           camera: metrics.camera,
           assets: occupants.filter((o) => o.asset).map((o) => o.agent.avatar),
           avatars: metrics.avatars,
@@ -351,6 +462,60 @@ export function OfficeScene({
           })),
         })}
       />
+      {layoutError && <p role="alert">{layoutError}</p>}
+      {savedLayout?.recoveredFrom !== undefined && (
+        <p className="layout-recovery" role="status">
+          Layout restored from{" "}
+          {savedLayout.recoveredFrom
+            ? `valid revision ${savedLayout.recoveredFrom}`
+            : "the default room"}{" "}
+          because the latest saved revision was corrupt.
+        </p>
+      )}
+      <details className="layout-inventory">
+        <summary>
+          Furniture inventory · {visibleLayout.placements.length} workstations
+        </summary>
+        <ul>
+          {visibleLayout.placements.map((p) => (
+            <li key={p.id} data-located={selectedDesk === p.id}>
+              <span>
+                {p.id} · {p.rotation * 90}° ·{" "}
+                {completeWorkstation(p) ? "complete" : "incomplete"} ·{" "}
+                {agents.find(
+                  (agent) => visibleLayout.assignments[agent.id] === p.id,
+                )?.name ?? "Unassigned"}
+              </span>
+              <button
+                aria-label={`Locate ${p.id}`}
+                onClick={() => locateDesk(p.id)}
+              >
+                Locate
+              </button>
+            </li>
+          ))}
+        </ul>
+      </details>
+      {editing && (
+        <LayoutEditor
+          snapshot={editing}
+          agents={agents}
+          selectedId={selectedDesk}
+          select={setSelectedDesk}
+          preview={setDraft}
+          connected={connected}
+          cancel={() => {
+            setEditing(undefined);
+            setDraft(undefined);
+          }}
+          saved={(value) => {
+            setSavedLayout(value);
+            onLayoutSaved?.(value);
+            setEditing(undefined);
+            setDraft(undefined);
+          }}
+        />
+      )}
       {libraryOpen && (
         <CharacterLibrary
           agent={agents.find((a) => a.id === selected)}
