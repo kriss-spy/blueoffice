@@ -19,3 +19,5 @@ Verification:
 Commands: `npm test`, `npm run test:protocol`, `npm run build`, `python3 scripts/hermes_probe.py --suite office --output artifacts/approval`.
 
 Limit: decision delivery and native closure are reported separately; neither a local click nor a successful pipe write alone proves the permitted action ran. Cross-process replay/resume remains #8/#12. Session/permanent scope is controlled by Hermes and exposed only when advertised; these tests do not claim persistence of every native tool-specific allowlist pattern.
+
+Final checks: 38 TypeScript tests, 19 Python tests and the production build pass. [Independent reviews](approval-review.md) report zero Standards findings and zero Spec findings.
