@@ -42,7 +42,8 @@ def validate_approval_policy(home, config, fixture=False):
             defined = "HERMES_YOLO_MODE" in load_env_file(path)
         if defined:
             raise ProfileError("Remove HERMES_YOLO_MODE from the profile environment before selecting manual approvals. The environment file has not been changed.")
-    if config.get("secrets"):
+    if any(isinstance(source, dict) and source.get("enabled") is True
+           for source in (config.get("secrets") or {}).values()):
         raise ProfileError("Manual approvals cannot yet be verified with external environment sources. Disable that profile integration before adopting it.")
 
 
