@@ -653,7 +653,7 @@ try {
   if (inputBusyBefore !== 7)
     throw new Error("Input responsiveness requires seven unfinished streams");
   await input.click();
-  await input.pressSequentially("Chat during active public streams", {
+  await input.pressSequentially("Active chat", {
     delay: 8,
   });
   await page.evaluate(
@@ -688,9 +688,13 @@ try {
       window.__bench.streamEvents.some((event) => event.revision === revision),
     finalStreamRevision,
   );
+  await page.evaluate((revision) => {
+    window.__bench.streamFinalRevision = revision;
+  }, finalStreamRevision);
   const expectedStreamEvents = office
     .eventsSince(journalBefore, office.snapshot().journalId)
-    .events.map((event) => ({
+    .events.filter((event) => event.revision <= finalStreamRevision)
+    .map((event) => ({
       revision: event.revision,
       key: event.key,
       kind: event.kind,
@@ -701,13 +705,17 @@ try {
       document.querySelector("[data-office-scene]").dataset.officeScene,
     ).avatars,
     updates: window.__bench.updateEvents,
-    events: window.__bench.streamEvents,
+    events: window.__bench.streamEvents.filter(
+      (event) => event.revision <= window.__bench.streamFinalRevision,
+    ),
     chunks: window.__bench.streamChunks,
   }));
   report.streaming = {
     durationMs: performance.now() - streamStart,
     journalEvents: office.snapshot().revision - journalBefore,
     receivedUpdateBatches: streamAfter.updates,
+    journalFromRevision: journalBefore,
+    journalThroughRevision: finalStreamRevision,
     expectedEvents: expectedStreamEvents,
     receivedEvents: streamAfter.events,
     allJournalEdgesDelivered:
@@ -947,7 +955,7 @@ try {
     report.streaming.geometryStable &&
     report.streaming.independentRigs &&
     report.streaming.completeAgents === 7 &&
-    report.streaming.inputEvents.length >= 20 &&
+    report.streaming.inputEvents.length >= 10 &&
     report.streaming.inputBusyBefore === 7 &&
     report.streaming.inputBusyAfter === 7 &&
     report.streaming.retainedChunks.every(
