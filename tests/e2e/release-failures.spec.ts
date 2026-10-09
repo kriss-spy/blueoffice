@@ -2,6 +2,8 @@ import {
   test,
   expect,
   createAgent,
+  selectAgent,
+  openRoster,
   snapshot,
   frames,
   send,
@@ -15,7 +17,10 @@ test("quota and unavailable proxy stay distinct, redact provider details and nev
   await createAgent(page, "Hina");
   await send(page, "Hina", "fail quota");
   await expect(
-    page.getByText("Provider limit reached", { exact: false }).first(),
+    page
+      .getByRole("dialog", { name: "Hina", exact: true })
+      .getByText("Provider limit reached", { exact: false })
+      .first(),
   ).toBeVisible();
   await expect(
     page.getByText(/Provider quota was reached/).first(),
@@ -34,6 +39,7 @@ test("quota and unavailable proxy stay distinct, redact provider details and nev
     (await frames(current)).filter((f) => f.method === "prompt.submit"),
   ).toHaveLength(1);
   await page.reload();
+  await selectAgent(page, "Hina");
   await expect(page.getByLabel("Message Hina")).toBeEnabled();
   await expect(
     page.getByText(/Provider quota was reached/).first(),
@@ -68,14 +74,17 @@ test("one native transport failure leaves another assistant's exact unanswered r
   ).toBeVisible();
   const yuuka = (await snapshot(page)).agents.find((a) => a.name === "Yuuka")!;
   const request = yuuka.requests.at(-1)!;
-  await page
-    .getByRole("navigation", { name: "Select an agent" })
-    .getByRole("button", { name: /Hina/ })
-    .click();
+  await selectAgent(page, "Hina");
   await send(page, "Hina", "exit");
   await expect(page.getByLabel("Message Hina")).toBeDisabled();
-  await expect(page.getByText(/Status unknown/).first()).toBeVisible();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Hina", exact: true })
+      .getByText(/Status unknown/)
+      .first(),
+  ).toBeVisible();
   await page.reload();
+  await selectAgent(page, "Hina");
   await expect(page.getByLabel("Message Hina")).toBeDisabled();
   const after = await snapshot(page);
   expect(after.agents.find((a) => a.id === hina.id)?.freshness).toBe("unknown");
@@ -84,8 +93,10 @@ test("one native transport failure leaves another assistant's exact unanswered r
   expect(surviving.requests.find((r) => r.id === request.id)?.state).toBe(
     "open",
   );
-  await page
-    .getByRole("region", { name: "Room attention", exact: true })
+  await (
+    await openRoster(page)
+  )
+    .getByRole("region", { name: "Attention queue", exact: true })
     .getByRole("button", {
       name: `Open question for Yuuka: ${request.id}`,
       exact: true,

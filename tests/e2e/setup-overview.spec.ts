@@ -2,6 +2,7 @@ import {
   test,
   expect,
   createAgent,
+  selectAgent,
   send,
   snapshot,
   frames,
@@ -102,7 +103,7 @@ test("two overview agents keep prompts, question, denial, stop and configuration
   await overview
     .getByRole("button", { name: "Configure Akane", exact: true })
     .click();
-  const settings = page.locator("dialog[open]");
+  const settings = page.locator("dialog.settings-dialog[open]");
   await settings.getByLabel("Name", { exact: true }).fill("Akane configured");
   await settings
     .getByLabel("Persona / SOUL", { exact: true })
@@ -152,6 +153,7 @@ test("two overview agents keep prompts, question, denial, stop and configuration
     storedSessionId: agent.storedSessionId,
   }));
   await page.reload();
+  await selectAgent(page, "Hina");
   await expect(page.getByLabel("Message Hina")).toBeEnabled();
   expect(
     (await snapshot(page)).agents.map((agent) => ({

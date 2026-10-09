@@ -2,6 +2,8 @@ import {
   test,
   expect,
   createAgent,
+  sceneAgent,
+  openOfficeSettings,
   send,
   snapshot,
   frames,
@@ -82,6 +84,7 @@ test("move, rotate, undo/redo, save and reload during pending input preserve the
   expect(mutationFrames(await frames(after))).toEqual(
     mutationFrames(beforeFrames),
   );
+  await openOfficeSettings(page);
   await page.getByText("Furniture inventory", { exact: false }).click();
   await page
     .getByRole("button", { name: "Locate desk-1", exact: true })
@@ -137,9 +140,9 @@ test("invalid ghost, component detachment, safe unassignment and Cancel stay loc
     .getByRole("button", { name: "Detach chair", exact: true })
     .click();
   await expect(editor.getByLabel("Workstation for Hina")).toHaveValue("");
-  await expect(page.locator(`[data-scene-agent="${before.id}"]`)).toContainText(
-    "Unassigned · safe standing",
-  );
+  await expect
+    .poll(async () => (await sceneAgent(page, before.id)).deskId)
+    .toBeUndefined();
   await editor
     .getByRole("button", { name: "Undo placement", exact: true })
     .click();

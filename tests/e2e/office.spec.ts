@@ -2,6 +2,7 @@ import {
   test,
   expect,
   createAgent,
+  selectAgent,
   send,
   snapshot,
   frames,
@@ -21,6 +22,7 @@ test("question answers survive reload, reject competing answers, and resume the 
   const request = agent.requests[0];
   const other = await context.newPage();
   await other.goto(office.url);
+  await selectAgent(other, "Hina");
   await expect(
     other.getByRole("region", { name: "Question request" }),
   ).toBeVisible();
@@ -55,6 +57,7 @@ test("question answers survive reload, reject competing answers, and resume the 
   expect(duplicate.status).toBe(409);
   expect(duplicate.body.error).toMatch(/already locked/);
   await page.reload();
+  await selectAgent(page, "Hina");
   card = page.getByRole("region", { name: "Question request" }).last();
   await expect(
     card.getByRole("radio", { name: "Birch", exact: true }),
@@ -104,6 +107,7 @@ test("permission denial persists and never sends an allow decision", async ({
   ).toBeVisible();
   await expect(page.getByLabel("Message Hina")).toBeEnabled();
   await page.reload();
+  await selectAgent(page, "Hina");
   card = page.getByRole("region", { name: "Permission request" }).last();
   await expect(card).toContainText("Decision recorded: Deny");
   expect(
@@ -173,10 +177,7 @@ test("answering one of two waiting agents leaves the other request untouched", a
   const akane = (await snapshot(page)).agents.find(
     (agent) => agent.name === "Akane",
   )!;
-  await page
-    .getByRole("navigation", { name: "Select an agent" })
-    .getByRole("button", { name: /Hina/ })
-    .click();
+  await selectAgent(page, "Hina");
   const card = page.getByRole("region", { name: "Question request" }).last();
   await card.getByRole("radio", { name: "Oak", exact: true }).check();
   await card.getByRole("button", { name: "Send answer", exact: true }).click();
@@ -184,6 +185,7 @@ test("answering one of two waiting agents leaves the other request untouched", a
     card.getByText("Hermes confirmed this request is closed."),
   ).toBeVisible();
   await page.reload();
+  await selectAgent(page, "Hina");
   await expect(page.getByLabel("Message Hina")).toBeEnabled();
   const current = await snapshot(page);
   expect(
@@ -203,10 +205,7 @@ test("answering one of two waiting agents leaves the other request untouched", a
   expect(
     (await frames(akane)).filter((frame) => frame.method === "prompt.submit"),
   ).toHaveLength(1);
-  await page
-    .getByRole("navigation", { name: "Select an agent" })
-    .getByRole("button", { name: /Akane/ })
-    .click();
+  await selectAgent(page, "Akane");
   await expect(
     page
       .getByRole("region", { name: "Question request" })

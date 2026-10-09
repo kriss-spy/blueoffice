@@ -10,7 +10,7 @@ test("new and adopted setup collect reviewed avatar and explicit desk identity b
 }) => {
   await page.goto(office.url);
   await expect(
-    page.getByText("Connected locally", { exact: true }),
+    page.getByLabel("Connected locally", { exact: true }),
   ).toBeVisible();
   const ref = await page.evaluate(async (pack) => {
     const { csrf } = await (await fetch("/api/session")).json();
@@ -37,7 +37,7 @@ test("new and adopted setup collect reviewed avatar and explicit desk identity b
     return imported.ref;
   }, setupCharacterPack());
   await page.getByRole("button", { name: "Add agent", exact: true }).click();
-  let dialog = page.locator("dialog[open]");
+  let dialog = page.locator("dialog.create-dialog:not(.settings-dialog)[open]");
   await dialog.getByLabel("Name", { exact: true }).fill("Assigned");
   await dialog.getByLabel("Workspace", { exact: true }).fill(tmpdir());
   await dialog
@@ -69,7 +69,7 @@ test("new and adopted setup collect reviewed avatar and explicit desk identity b
   await page
     .getByRole("button", { name: "Adopt an existing profile instead" })
     .click();
-  dialog = page.locator("dialog[open]");
+  dialog = page.locator("dialog.settings-dialog[open]");
   await dialog.getByLabel("Existing Hermes profile home").fill(home);
   await dialog
     .getByRole("button", { name: "Inspect profile", exact: true })

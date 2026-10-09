@@ -2,6 +2,9 @@ import {
   test,
   expect,
   createAgent,
+  openOfficeSettings,
+  selectAgent,
+  closeOfficeSettings,
   send,
   snapshot,
   frames,
@@ -94,6 +97,7 @@ test("mapped walks follow saved destinations, task movement has no commands and 
   expect(visible.agents[0].motion).toBe("idle");
   expect(visible.agents[0].paused).toBe(true);
   expect(visible.agents[0].position).toEqual([1.02, 0, 1.72]);
+  await openOfficeSettings(page);
   await page.getByLabel("Lounge idle assistants").check();
   await expect
     .poll(async () => (await scene(page)).agents[0].motion)
@@ -147,7 +151,9 @@ test("actual-turn completion reacts once and optional original sound stays off u
   const agent = (await snapshot(page)).agents[0];
   await sparseLayout(page, agent.id);
   await assignSceneTestPack(page, agent.id);
+  await openOfficeSettings(page);
   await expect(page.getByLabel("Quiet notification sound")).not.toBeChecked();
+  await closeOfficeSettings(page);
   await send(page, "Hina", "hello");
   await expect
     .poll(async () => (await scene(page)).agents[0].motion)
@@ -161,19 +167,25 @@ test("actual-turn completion reacts once and optional original sound stays off u
   await page.reload();
   await expect.poll(async () => (await scene(page)).agents[0].cue).toBe(false);
   expect((await snapshot(page)).agents[0].turnId).toBe(completed.turnId);
+  await openOfficeSettings(page);
   await page.getByLabel("Quiet notification sound").check();
+  await closeOfficeSettings(page);
+  await selectAgent(page, "Hina");
   await expect.poll(async () => (await scene(page)).scene.soundOn).toBe(true);
   await send(page, "Hina", "question");
   await expect(
     page.getByRole("region", { name: "Question request" }).last(),
   ).toBeVisible();
   await expect.poll(async () => (await scene(page)).scene.soundsPlayed).toBe(1);
+  await openOfficeSettings(page);
   await page.getByLabel("Lounge idle assistants").check();
   await page.getByLabel("Lounge idle assistants").uncheck();
   expect((await scene(page)).scene.soundsPlayed).toBe(1);
   expect((await scene(page)).agents[0].cue).toBe(false);
   await page.reload();
+  await openOfficeSettings(page);
   await expect(page.getByLabel("Quiet notification sound")).not.toBeChecked();
+  await closeOfficeSettings(page);
   await expect.poll(async () => (await scene(page)).agents[0].cue).toBe(false);
   expect((await snapshot(page)).agents[0].turnId).not.toBe(completed.turnId);
 });

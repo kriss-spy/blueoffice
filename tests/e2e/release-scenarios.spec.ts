@@ -8,6 +8,7 @@ import {
   test,
   expect,
   createAgent,
+  openRoster,
   send,
   snapshot,
   frames,
@@ -154,8 +155,9 @@ test("PRD scenario 1: different reviewed avatars and profiles retain independent
   const question = hina.requests.at(-1)!,
     permission = akane.requests.at(-1)!,
     heldFrames = await mutationFrames(akane);
+  await openRoster(page);
   const queue = page.getByRole("region", {
-    name: "Room attention",
+    name: "Attention queue",
     exact: true,
   });
   await expect(queue.getByRole("button")).toHaveCount(2);
@@ -173,6 +175,7 @@ test("PRD scenario 1: different reviewed avatars and profiles retain independent
     akane,
   );
   expect(await mutationFrames(akane)).toEqual(heldFrames);
+  await openRoster(page);
   await queue
     .getByRole("button", {
       name: `Open question for Hina: ${question.id}`,
@@ -205,7 +208,7 @@ test("PRD scenario 1: different reviewed avatars and profiles retain independent
   await page
     .getByRole("button", { name: "Agent settings", exact: true })
     .click();
-  const settings = page.locator("dialog[open]");
+  const settings = page.locator("dialog.settings-dialog[open]");
   await settings
     .getByLabel("Persona / SOUL", { exact: true })
     .fill("HINA_ONLY_RELEASE_PERSONA");
@@ -234,6 +237,7 @@ test("PRD scenario 1: different reviewed avatars and profiles retain independent
   const preservedHina = (await snapshot(page)).agents.find(
     (a) => a.id === hina.id,
   )!;
+  await openRoster(page);
   await queue
     .getByRole("button", {
       name: `Open permission for Akane: ${permission.id}`,

@@ -3,6 +3,8 @@ import {
   test,
   expect,
   createAgent,
+  sceneAgent,
+  openOfficeSettings,
   send,
   snapshot,
   frames,
@@ -14,6 +16,7 @@ async function portable(
   return page.evaluate(async () => (await fetch("/api/layout/export")).json());
 }
 async function upload(page: import("@playwright/test").Page, value: unknown) {
+  await openOfficeSettings(page);
   await page
     .getByRole("button", { name: "Import layout", exact: true })
     .click();
@@ -46,6 +49,7 @@ test("downloaded reference-only layout round-trips rotated missing characters wh
   ).toBeVisible();
   const before = (await snapshot(page)).agents[0];
   const beforeFrames = await frames(before);
+  await openOfficeSettings(page);
   const downloadReady = page.waitForEvent("download");
   await page
     .getByRole("button", { name: "Export layout", exact: true })
@@ -98,9 +102,9 @@ test("downloaded reference-only layout round-trips rotated missing characters wh
   expect(after.turnId).toBe(before.turnId);
   expect(after.liveSessionId).toBe(before.liveSessionId);
   expect(await frames(after)).toEqual(beforeFrames);
-  await expect(page.locator(`[data-scene-agent="${before.id}"]`)).toContainText(
-    "Character unavailable",
-  );
+  await expect
+    .poll(async () => (await sceneAgent(page, before.id)).diagnostic)
+    .toMatch(/missing|unavailable|review/i);
   await page.reload();
   expect((await portable(page)).agents[0].avatar).toEqual(ref);
   expect((await portable(page)).placements[0].rotation).toBe(1);
@@ -236,6 +240,7 @@ test("unknown office-agent references remain unresolved across reload and re-exp
       (ref) => ref.agentId === "foreign-agent-reference",
     ),
   ).toBe(true);
+  await openOfficeSettings(page);
   await page
     .getByText("Unresolved portable references", { exact: true })
     .click();
@@ -250,6 +255,7 @@ test("portable import modal traps focus, closes with Escape and returns focus to
 }) => {
   await page.goto(office.url);
   await createAgent(page, "Hina");
+  await openOfficeSettings(page);
   const button = page.getByRole("button", {
     name: "Import layout",
     exact: true,

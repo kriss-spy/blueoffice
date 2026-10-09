@@ -3,6 +3,9 @@ import {
   test,
   expect,
   createAgent,
+  openRoster,
+  openOfficeSettings,
+  closeOfficeSettings,
   send,
   snapshot,
   frames,
@@ -121,11 +124,16 @@ test("context loss with reduced motion retains eight exact requests including un
     ).toBeVisible();
   }
   const before = await snapshot(page);
-  const queue = page.getByRole("region", {
-    name: "Room attention",
+  await openRoster(page);
+  let queue = page.getByRole("region", {
+    name: "Attention queue",
     exact: true,
   });
-  await expect(queue).toContainText("8 pending requests");
+  await expect(
+    page
+      .getByRole("dialog", { name: "Agents", exact: true })
+      .getByLabel("1 pending requests"),
+  ).toHaveCount(8);
   await expect(queue.getByRole("button")).toHaveCount(8);
   await page.evaluate(async () => {
     const { csrf } = await (await fetch("/api/session")).json();
@@ -164,6 +172,7 @@ test("context loss with reduced motion retains eight exact requests including un
     .poll(async () => page.locator(".live-marker:visible").count())
     .toBeLessThan(8);
   await expect(queue.getByRole("button")).toHaveCount(8);
+  await page.getByRole("button", { name: "Close Agents", exact: true }).click();
   await page.locator(".live-room canvas").evaluate((canvas) => {
     const context = (canvas as HTMLCanvasElement).getContext("webgl2");
     context?.getExtension("WEBGL_lose_context")?.loseContext();
@@ -171,6 +180,7 @@ test("context loss with reduced motion retains eight exact requests including un
   await expect(
     page.getByRole("button", { name: "Retry 3D view", exact: true }),
   ).toBeVisible();
+  queue = page.getByRole("region", { name: "Room attention", exact: true });
   await expect(queue.getByRole("button")).toHaveCount(8);
   const first = before.agents[0];
   await activate(
@@ -194,6 +204,8 @@ test("context loss with reduced motion retains eight exact requests including un
     expect(b.epoch).toBe(a.epoch);
     expect(b.liveSessionId).toBe(a.liveSessionId);
   }
+  await openRoster(page);
+  queue = page.getByRole("region", { name: "Attention queue", exact: true });
   await expect(queue.getByRole("button")).toHaveCount(8);
   await expect
     .poll(async () =>
@@ -220,18 +232,21 @@ test("failed character bytes preserve truthful fallback and keyboard exact atten
     }),
   );
   await assignSceneTestPack(page, before.id);
+  await openOfficeSettings(page);
   await expect(
     page
       .getByRole("status")
       .filter({ hasText: "Hina: Character file missing." }),
   ).toBeVisible();
+  await closeOfficeSettings(page);
   await send(page, "Hina", "question");
   await expect(
     page.getByRole("region", { name: "Question request" }).last(),
   ).toBeVisible();
   const pending = (await snapshot(page)).agents[0].requests.at(-1)!;
+  await openRoster(page);
   const queue = page.getByRole("region", {
-    name: "Room attention",
+    name: "Attention queue",
     exact: true,
   });
   await expect(queue.getByRole("button")).toHaveCount(1);
@@ -247,9 +262,13 @@ test("failed character bytes preserve truthful fallback and keyboard exact atten
     .poll(async () => (await scene(page)).agents[0].paused)
     .toBe(true);
   await visibility("visible");
+  await page.getByRole("button", { name: "Close Agents", exact: true }).click();
   await expect.poll(async () => (await scene(page)).scene.hidden).toBe(false);
+  await openOfficeSettings(page);
   await page.getByLabel("Select office assistant").focus();
   await expect(page.getByLabel("Select office assistant")).toBeFocused();
+  await closeOfficeSettings(page);
+  await openRoster(page);
   await activate(
     queue.getByRole("button", {
       name: `Open question for Hina: ${pending.id}`,

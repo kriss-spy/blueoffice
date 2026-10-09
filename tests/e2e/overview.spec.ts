@@ -2,6 +2,7 @@ import {
   test,
   expect,
   createAgent,
+  selectAgent,
   send,
   snapshot,
   frames,
@@ -84,6 +85,7 @@ test("eight-agent overview counts and direct lifecycle controls preserve another
     storedSessionId: a.storedSessionId,
   }));
   await page.reload();
+  await selectAgent(page, "Hina");
   await expect(page.getByLabel("Message Hina")).toBeEnabled();
   expect(
     (await snapshot(page)).agents.map((a) => ({

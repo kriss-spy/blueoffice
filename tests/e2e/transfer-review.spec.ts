@@ -1,4 +1,11 @@
-import { test, expect, createAgent, snapshot } from "./fixtures.js";
+import {
+  test,
+  expect,
+  createAgent,
+  sceneAgent,
+  openOfficeSettings,
+  snapshot,
+} from "./fixtures.js";
 import { setupCharacterPack } from "../setup-fixture.js";
 
 test("an open unreviewed character preview cannot authorize a portable assignment", async ({
@@ -60,11 +67,12 @@ test("an open unreviewed character preview cannot authorize a portable assignmen
   const agent = (await snapshot(page)).agents[0];
   expect(agent.avatar).toEqual(ref);
   expect(agent.lifecycle).toBe("ready");
-  await expect(page.locator(`[data-scene-agent="${agent.id}"]`)).toContainText(
-    "Character unavailable",
-  );
-  await expect(page.locator(".live-scene-bottom")).toContainText(
-    "Preview and review this exact character version",
-  );
+  await expect
+    .poll(async () => (await sceneAgent(page, agent.id)).diagnostic)
+    .toMatch(/missing|unavailable|review/i);
+  await openOfficeSettings(page);
+  await expect(
+    page.getByRole("dialog", { name: "Office settings" }),
+  ).toContainText("Preview and review this exact character version");
   await expect(page.getByLabel("Message Hina")).toBeEnabled();
 });

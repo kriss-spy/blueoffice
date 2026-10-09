@@ -1,4 +1,11 @@
-import { test, expect, createAgent, snapshot } from "./fixtures.js";
+import {
+  test,
+  expect,
+  createAgent,
+  openOfficeSettings,
+  closeOfficeSettings,
+  snapshot,
+} from "./fixtures.js";
 import { assignSceneTestPack } from "./scene-asset-fixture.js";
 
 test("scene quality persists with two loaded avatars and preserves agent identity across graphics loss", async ({
@@ -18,6 +25,7 @@ test("scene quality persists with two loaded avatars and preserves agent identit
     .poll(async () => Object.keys((await metrics()).avatars).length)
     .toBe(2);
   const before = (await metrics()).avatars;
+  await openOfficeSettings(page);
   await page
     .getByLabel("Scene quality", { exact: true })
     .selectOption("reduced");
@@ -34,12 +42,14 @@ test("scene quality persists with two loaded avatars and preserves agent identit
       (rig as any).geometryId,
     );
   await page.reload();
+  await openOfficeSettings(page);
   await expect(page.getByLabel("Scene quality", { exact: true })).toHaveValue(
     "reduced",
   );
   await expect(
     page.getByText("32 components + 8 room furniture", { exact: false }),
   ).toBeVisible();
+  await closeOfficeSettings(page);
   await page.evaluate(() =>
     document
       .querySelector("canvas")!

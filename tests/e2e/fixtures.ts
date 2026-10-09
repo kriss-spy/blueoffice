@@ -96,9 +96,46 @@ export const test = base.extend<{ office: { url: string; data: string } }>({
 });
 export { expect };
 
+/** Enter through the visible HUD; reloading intentionally leaves these windows closed. */
+export async function openRoster(page: Page) {
+  const roster = page.getByRole("dialog", { name: "Agents", exact: true });
+  if (!(await roster.isVisible()))
+    await page.getByRole("button", { name: "Agents", exact: true }).click();
+  await expect(roster).toBeVisible();
+  return roster;
+}
+export async function selectAgent(page: Page, name: string) {
+  const roster = await openRoster(page);
+  await roster
+    .getByRole("navigation", { name: "Select an agent" })
+    .getByRole("button", { name: new RegExp(`^${name} `) })
+    .click();
+  await expect(roster).not.toBeVisible();
+  await expect(page.getByRole("dialog", { name, exact: true })).toBeVisible();
+}
+export async function openOfficeSettings(page: Page) {
+  const settings = page.getByRole("dialog", {
+    name: "Office settings",
+    exact: true,
+  });
+  if (!(await settings.isVisible()))
+    await page
+      .getByRole("button", { name: "Office settings", exact: true })
+      .click();
+  await expect(settings).toBeVisible();
+  return settings;
+}
+export async function closeOfficeSettings(page: Page) {
+  await page
+    .getByRole("button", { name: "Close Office settings", exact: true })
+    .click();
+}
+
 export async function createAgent(page: Page, name: string) {
   await page.getByRole("button", { name: "Add agent", exact: true }).click();
-  const dialog = page.locator("dialog[open]");
+  const dialog = page.locator(
+    "dialog.create-dialog:not(.settings-dialog)[open]",
+  );
   await dialog.getByLabel("Name", { exact: true }).fill(name);
   await dialog.getByLabel("Workspace", { exact: true }).fill(tmpdir());
   await dialog
@@ -126,4 +163,11 @@ export async function frames(agent: OfficeAgent) {
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));
+}
+
+export async function sceneAgent(page: Page, id: string) {
+  return page.locator("[data-office-scene]").evaluate((node, id) => {
+    const value = JSON.parse(node.getAttribute("data-office-scene")!);
+    return value.agents.find((agent: { id: string }) => agent.id === id);
+  }, id);
 }
