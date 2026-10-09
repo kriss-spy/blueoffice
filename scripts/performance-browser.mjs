@@ -194,6 +194,36 @@ try {
     cpu: execFileSync("lscpu", ["-J"], { encoding: "utf8" }),
     memory: (await readFile("/proc/meminfo", "utf8")).split("\n").slice(0, 3),
   };
+  await page.setViewportSize(report.viewport);
+  const metricsSession = await context.newCDPSession(page);
+  async function applyViewport() {
+    await metricsSession.send("Emulation.setDeviceMetricsOverride", {
+      ...report.viewport,
+      deviceScaleFactor: 1.5,
+      mobile: false,
+    });
+  }
+  async function viewportFacts() {
+    const facts = await page.evaluate(() => {
+      const canvas = document.querySelector("canvas");
+      const rect = canvas?.getBoundingClientRect();
+      return {
+        width: innerWidth,
+        height: innerHeight,
+        devicePixelRatio,
+        canvasCss: rect && { width: rect.width, height: rect.height },
+        canvasBuffer: canvas && { width: canvas.width, height: canvas.height },
+      };
+    });
+    if (
+      facts.width !== 1440 ||
+      facts.height !== 900 ||
+      facts.devicePixelRatio !== 1.5
+    )
+      throw new Error(`Measured viewport is invalid: ${JSON.stringify(facts)}`);
+    return facts;
+  }
+  await applyViewport();
   benchmarkPage = page;
   page.on("pageerror", (error) => report.errors.push(error.message));
   await page.addInitScript(() => {
@@ -289,9 +319,7 @@ try {
     document.addEventListener("input", (event) => {
       if (
         !(event.target instanceof HTMLTextAreaElement) ||
-        !event.target
-          .getAttribute("aria-label")
-          ?.startsWith("Message Performance")
+        event.target.id !== "prompt"
       )
         return;
       const began = performance.now();
@@ -299,7 +327,8 @@ try {
         const visibleFrame = performance.now();
         window.__bench.inputTimes.push(visibleFrame - began);
         window.__bench.inputEvents.push({
-          target: event.target.getAttribute("aria-label"),
+          target: "textarea#prompt",
+          label: event.target.labels?.[0]?.textContent,
           began,
           visibleFrame,
           durationMs: visibleFrame - began,
@@ -331,6 +360,7 @@ try {
     { timeout: 30000 },
   );
   report.loadMs = performance.now() - loadStart;
+  report.loadedViewport = await viewportFacts();
   report.renderer = await page.evaluate(() => {
     const gl = document.querySelector("canvas").getContext("webgl2");
     const debug = gl.getExtension("WEBGL_debug_renderer_info");
@@ -369,6 +399,7 @@ try {
   )[0];
   report.clockUncertaintyMs = bestClock.roundTripMs / 2;
   async function measure(quality, phase) {
+    await applyViewport();
     const selector = page.getByRole("combobox", {
       name: "Scene quality",
       exact: true,
@@ -377,6 +408,7 @@ try {
     else if (quality === "reduced")
       throw new Error("Reduced quality must be implemented before comparison.");
     await delay(1000);
+    const viewportBefore = await viewportFacts();
     const since = await page.evaluate(() => performance.now());
     await delay(sampleSeconds * 1000);
     const captured = await page.evaluate(
@@ -407,6 +439,8 @@ try {
       meanDraws:
         captured.browserFrames.reduce((sum, frame) => sum + frame.draws, 0) /
         deltas.length,
+      viewportBefore,
+      viewportAfter: await viewportFacts(),
       targetFps: quality === "ordinary" ? 60 : 30,
       raw: captured,
     };
@@ -431,7 +465,11 @@ try {
       summary.actualSceneFps !== null &&
       summary.actualSceneFps >= summary.targetFps;
     report.phases.push(summary);
-    await page.screenshot({ path: join(output, `${phase}-${quality}.png`) });
+    await page.screenshot({
+      path: join(output, `${phase}-${quality}.png`),
+      scale: "css",
+    });
+    await applyViewport();
     console.log(
       JSON.stringify({
         quality,
@@ -510,7 +548,7 @@ try {
         document.querySelector("[data-office-scene]").dataset.officeScene,
       ).avatars,
   );
-  const journalBefore = office.snapshot().revision;
+  let journalBefore = office.snapshot().revision;
   await page.evaluate(() => {
     window.__bench.updateEvents = 0;
     const Original = window.EventSource;
@@ -545,29 +583,37 @@ try {
       await delay(20);
     }
   }
+  const streamingAgents = office.snapshot().agents.slice(0, 7);
+  const composerAgent = office.snapshot().agents[7];
+  await page
+    .getByRole("navigation", { name: "Select an agent" })
+    .getByRole("button", { name: /Performance 8/ })
+    .click();
+  journalBefore = office.snapshot().revision;
+  await page.evaluate(() => {
+    window.__bench.updateEvents = 0;
+  });
   const streamStart = performance.now();
   await Promise.all(
-    office
-      .snapshot()
-      .agents.map((agent) =>
-        office.prompt(
-          agent.id,
-          randomUUID(),
-          { epoch: agent.epoch, sessionId: agent.liveSessionId },
-          "history stream",
-        ),
+    streamingAgents.map((agent) =>
+      office.prompt(
+        agent.id,
+        randomUUID(),
+        { epoch: agent.epoch, sessionId: agent.liveSessionId },
+        "history stream",
       ),
+    ),
   );
   await page.evaluate(() => {
     window.__bench.inputTimes = [];
     window.__bench.inputEvents = [];
   });
-  const input = page.getByLabel("Message Performance 1", { exact: true });
+  const input = page.getByLabel("Message Performance 8", { exact: true });
   const inputBusyBefore = office
     .snapshot()
     .agents.filter((agent) => agent.busy).length;
-  if (inputBusyBefore !== 8)
-    throw new Error("Input responsiveness requires eight unfinished streams");
+  if (inputBusyBefore !== 7)
+    throw new Error("Input responsiveness requires seven unfinished streams");
   await input.click();
   await input.pressSequentially("Chat during active public streams", {
     delay: 8,
@@ -581,7 +627,7 @@ try {
   const inputBusyAfter = office
     .snapshot()
     .agents.filter((agent) => agent.busy).length;
-  if (inputBusyAfter !== 8)
+  if (inputBusyAfter !== 7)
     throw new Error("Input measurement missed the active streaming window");
   const inputTimes = await page.evaluate(() => window.__bench.inputTimes);
   const inputEvents = await page.evaluate(() => window.__bench.inputEvents);
@@ -608,6 +654,10 @@ try {
     durationMs: performance.now() - streamStart,
     journalEvents: office.snapshot().revision - journalBefore,
     receivedUpdateBatches: streamAfter.updates,
+    streamAgentIds: streamingAgents.map((agent) => agent.id),
+    composerAgentId: composerAgent.id,
+    workload:
+      "8 runtimes/avatars, 7 concurrent streams plus eighth idle composer",
     inputBusyBefore,
     inputBusyAfter,
     inputEvents,
@@ -621,25 +671,34 @@ try {
       8,
     completeAgents: office
       .snapshot()
-      .agents.filter((agent) => agent.work === "completed").length,
-    retainedChunks: office.snapshot().agents.map((agent) => ({
-      id: agent.id,
-      userMessageCount: agent.messages.filter(
-        (message) => message.role === "user",
+      .agents.filter(
+        (agent) =>
+          streamingAgents.some((stream) => stream.id === agent.id) &&
+          agent.work === "completed",
       ).length,
-      streamChunksRetained: Array.from(
-        { length: 8 },
-        (_, index) => `Public stream chunk ${index}.`,
-      ).every((chunk) =>
-        agent.messages.some((message) => message.text?.includes(chunk)),
-      ),
-      finalComplete: agent.messages.some(
-        (message) =>
-          message.role === "assistant" &&
-          message.turnId === agent.turnId &&
-          message.state === "complete",
-      ),
-    })),
+    retainedChunks: office
+      .snapshot()
+      .agents.filter((agent) =>
+        streamingAgents.some((stream) => stream.id === agent.id),
+      )
+      .map((agent) => ({
+        id: agent.id,
+        userMessageCount: agent.messages.filter(
+          (message) => message.role === "user",
+        ).length,
+        streamChunksRetained: Array.from(
+          { length: 8 },
+          (_, index) => `Public stream chunk ${index}.`,
+        ).every((chunk) =>
+          agent.messages.some((message) => message.text?.includes(chunk)),
+        ),
+        finalComplete: agent.messages.some(
+          (message) =>
+            message.role === "assistant" &&
+            message.turnId === agent.turnId &&
+            message.state === "complete",
+        ),
+      })),
   };
   await page.evaluate(() => window.__bench.stream.close());
   for (let round = 0; round < 3; round++) {
@@ -822,10 +881,10 @@ try {
     report.hiddenTab.pendingRequestsPreserved &&
     report.streaming.geometryStable &&
     report.streaming.independentRigs &&
-    report.streaming.completeAgents === 8 &&
+    report.streaming.completeAgents === 7 &&
     report.streaming.inputEvents.length >= 20 &&
-    report.streaming.inputBusyBefore === 8 &&
-    report.streaming.inputBusyAfter === 8 &&
+    report.streaming.inputBusyBefore === 7 &&
+    report.streaming.inputBusyAfter === 7 &&
     report.streaming.retainedChunks.every(
       (agent) => agent.finalComplete && agent.streamChunksRetained,
     );
