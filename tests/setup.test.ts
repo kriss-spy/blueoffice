@@ -9,6 +9,7 @@ import { FixtureRuntime } from "../server/fixture-runtime.js";
 import { officeServer } from "../server/http.js";
 import { CharacterRegistry } from "../server/assets.js";
 import { setupCharacterPack } from "./setup-fixture.js";
+import { LayoutTransferService } from "../server/layout-transfer.js";
 const avatar = {
   assetId: "same-avatar",
   version: "v1",
@@ -114,6 +115,64 @@ test("duplicate avatar choices have independent profile identities; explicit una
     null,
   );
   await restarted.shutdown();
+});
+test("portable reference capacity reserves concurrent setup before profile writes", async (t) => {
+  const { root, office, factory, store } = await setup(t);
+  const transfer = new LayoutTransferService(store);
+  const manifest = transfer.export();
+  manifest.agents = Array.from({ length: 63 }, (_, i) => ({
+    agentId: `foreign-${i}`,
+    deskId: null,
+    avatar: null,
+  }));
+  const preview = transfer.preview(manifest);
+  transfer.import({
+    manifest,
+    baseRevision: preview.baseRevision,
+    bindings: preview.bindings,
+  });
+  const prepare = factory.prepare.bind(factory);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let writes = 0;
+  factory.prepare = async (...args) => {
+    writes++;
+    await held;
+    return prepare(...args);
+  };
+  const first = office.create("Last available identity", root);
+  try {
+    assert.throws(
+      () => office.create("Too many", root),
+      /portable reference slots/,
+    );
+    assert.equal(writes, 1);
+  } finally {
+    release();
+  }
+  const saved = await first;
+  const settings = await office.settings(saved.id);
+  let profileCalls = 0;
+  factory.profile = async () => {
+    profileCalls++;
+    throw new Error("must not touch profile");
+  };
+  assert.throws(
+    () =>
+      office.adopt(
+        "Blocked adoption",
+        join(root, "profiles", "external"),
+        settings.revision,
+        settings.values,
+        true,
+      ),
+    /portable reference slots/,
+  );
+  assert.equal(profileCalls, 0);
+  assert.equal(store.adoptions().length, 0);
+  assert.equal(transfer.preview(transfer.export()).manifest.agents.length, 64);
 });
 test("adoption preserves setup assignment through lost helper response and ownership recovery", async (t) => {
   const { root, office, store, factory } = await setup(t);
