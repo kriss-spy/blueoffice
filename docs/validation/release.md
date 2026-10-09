@@ -14,7 +14,7 @@ This is the acceptance index for issue #18. It does not declare the beta complet
 | Characters     | Reviewed versioned local packs, independent rigs, mapped clips and compatible seated profile | No private character geometry/textures are bundled; no final public roster          |
 | Motion         | Short validated routes, mapped walk/reaction, static work pose, default-off lounge/sound     | No invented typing or natural sit/get-up animation                                  |
 | Graphics       | WebGL room with independent DOM supervision, reduced motion and Retry                        | Dense-office quality/performance admission requires the final #17 report            |
-| Child activity | Native evidenced lineage, observed-only grouped history                                      | #21 worker implementation and independent acceptance are clear; combined integration is pending; no child control or avatars |
+| Child activity | Native evidenced lineage, observed-only grouped history                                      | #21 passed independent review, combined native/browser checks and required CI; merged in PR #36. No child control or avatars |
 
 ## PRD evidence map
 
