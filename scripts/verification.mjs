@@ -162,6 +162,25 @@ async function integration() {
         `${suite} probe did not produce passing, completed evidence`,
       );
   }
+  for (const [name, script] of [
+    ["history", "scripts/history_probe.py"],
+    ["resume", "scripts/history_resume_probe.py"],
+  ]) {
+    const evidence = resolve(output, `hermes-${name}`);
+    await run(
+      `hermes-${name}`,
+      "python3",
+      [script, "--output", evidence],
+      270_000,
+    );
+    const result = JSON.parse(
+      await readFile(resolve(evidence, "report.json"), "utf8"),
+    );
+    if (result.passed !== true || result.runner_completed !== true)
+      throw new Error(
+        `${name} probe did not produce passing, completed evidence`,
+      );
+  }
 }
 try {
   if (gate === "check" || gate === "release") await check();

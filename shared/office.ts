@@ -65,6 +65,13 @@ export interface PendingRequest {
   at: string;
 }
 export interface Conversation {
+  resumedFrom?: {
+    historyId: string;
+    requestedStoredSessionId: string;
+    resolvedStoredSessionId: string;
+    source: string;
+    profileName: string;
+  };
   epoch: string;
   liveSessionId: string;
   storedSessionId: string;

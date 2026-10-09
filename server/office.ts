@@ -40,6 +40,11 @@ import type {
   SettingsResult,
 } from "../shared/settings.js";
 import { settingsSchema } from "../shared/settings.js";
+import type {
+  ConversationAction,
+  ConversationTarget,
+  ResumePlan,
+} from "../shared/resume.js";
 
 const now = () => new Date().toISOString();
 const text = (value: unknown, limit = 32_000) =>
@@ -140,6 +145,7 @@ export class Office extends EventEmitter {
     return work.finally(() => this.mutations.delete(work));
   }
   private settingsWriters = new Set<string>();
+  private conversationWriters = new Set<string>();
   private activeAdoptions = new Set<string>();
   private recovering?: Promise<void>;
   recoverAdoptions(): Promise<void> {
@@ -429,7 +435,11 @@ export class Office extends EventEmitter {
     name: string,
   ) {
     const agent = this.get(id);
-    if (this.closing || this.settingsWriters.has(id))
+    if (
+      this.closing ||
+      this.settingsWriters.has(id) ||
+      this.conversationWriters.has(id)
+    )
       throw new OfficeError("A settings operation is already in progress.");
     if (
       this.runtimes.has(id) ||
@@ -588,6 +598,8 @@ export class Office extends EventEmitter {
     }
   }
   private assertCurrent(agent: OfficeAgent, target: Target): RpcChild {
+    if (this.conversationWriters.has(agent.id))
+      throw new OfficeError("Wait for the conversation transition to finish.");
     if (
       agent.epoch !== target.epoch ||
       agent.liveSessionId !== target.sessionId
@@ -603,6 +615,10 @@ export class Office extends EventEmitter {
     return rpc;
   }
   async start(id: string) {
+    if (this.conversationWriters.has(id))
+      throw new OfficeError(
+        "A conversation transition is already in progress.",
+      );
     const startup = this.startRuntime(id);
     this.startups.add(startup);
     try {
@@ -611,7 +627,109 @@ export class Office extends EventEmitter {
       this.startups.delete(startup);
     }
   }
-  private async startRuntime(id: string) {
+  conversation(
+    id: string,
+    commandId: string,
+    expectedTarget: ConversationTarget,
+    action: ConversationAction,
+  ): Promise<Receipt> {
+    return this.trackMutation(
+      this.transitionConversation(id, commandId, expectedTarget, action),
+    );
+  }
+  private assertTransition(agent: OfficeAgent, target: ConversationTarget) {
+    if (this.closing || this.settingsWriters.has(agent.id))
+      throw new OfficeError(
+        "An ownership or settings operation is in progress.",
+      );
+    if (
+      agent.epoch !== target.epoch ||
+      agent.liveSessionId !== target.sessionId
+    )
+      throw new OfficeError(
+        "This conversation changed. Refresh before starting or resuming.",
+      );
+    if (
+      agent.freshness !== "current" ||
+      !["ready", "stopped"].includes(agent.lifecycle) ||
+      agent.busy ||
+      attention(agent).length ||
+      (agent.lifecycle === "ready" &&
+        ["working", "tool", "interrupting", "unknown"].includes(agent.work))
+    )
+      throw new OfficeError(
+        "Starting or resuming requires an idle assistant with verified current state. Stop uncertain runtimes explicitly; busy tasks are never interrupted by this action.",
+      );
+  }
+  private async transitionConversation(
+    id: string,
+    commandId: string,
+    expectedTarget: ConversationTarget,
+    action: ConversationAction,
+  ) {
+    const agent = this.get(id);
+    const payload = { expectedTarget, action };
+    // Exact retries survive the successful transition's fresh target.
+    if (this.store.command(id, commandId))
+      return structuredClone(
+        this.admit(agent, commandId, "conversation", payload)!,
+      );
+    if (this.conversationWriters.has(id))
+      throw new OfficeError(
+        "A conversation transition is already in progress.",
+      );
+    this.assertTransition(agent, expectedTarget);
+    if (
+      action.kind === "resume" &&
+      !agent.conversations.some(
+        (c) =>
+          c.storedSessionId === action.storedSessionId ||
+          c.storedSessionIds.includes(action.storedSessionId),
+      )
+    )
+      throw new OfficeError(
+        "This stored history has no verified ownership binding to this assistant.",
+      );
+    this.conversationWriters.add(id);
+    try {
+      const resume =
+        action.kind === "resume"
+          ? await this.factory.resumePlan(agent, action.storedSessionId)
+          : undefined;
+      if (!resume) await this.factory.launch(agent); // Read-only admission before retiring the current child.
+      this.assertTransition(agent, expectedTarget);
+      this.admit(agent, commandId, "conversation", payload);
+      const receipt = agent.receipts.at(-1)!;
+      try {
+        if (this.runtimes.has(id)) await this.stopRuntime(id);
+        await this.startRuntime(
+          id,
+          resume,
+          action.kind === "resume" ? action.historyId : undefined,
+        );
+        receipt.state = "accepted";
+        receipt.message =
+          action.kind === "resume"
+            ? "Stored history resumed in a fresh owned conversation. No task was replayed."
+            : "New owned conversation started.";
+      } catch (error) {
+        receipt.state = "failed";
+        receipt.message =
+          error instanceof Error
+            ? error.message
+            : "Conversation transition failed. No new conversation fallback was attempted.";
+      }
+      this.changed(agent, "conversation.receipt");
+      return structuredClone(receipt);
+    } finally {
+      this.conversationWriters.delete(id);
+    }
+  }
+  private async startRuntime(
+    id: string,
+    resume?: ResumePlan,
+    historyId?: string,
+  ) {
     const agent = this.get(id);
     if (this.closing) throw new OfficeError("Office is shutting down.");
     if (this.settingsWriters.has(id))
@@ -641,7 +759,7 @@ export class Office extends EventEmitter {
     this.changed(agent, "runtime.starting");
     let rpc: RpcChild | undefined;
     try {
-      const launch = await this.factory.launch(agent);
+      const launch = await this.factory.launch(agent, resume);
       if (this.closing) throw new Error("Office shutdown interrupted startup.");
       rpc = new RpcChild(launch);
       this.runtimes.set(id, rpc);
@@ -692,19 +810,54 @@ export class Office extends EventEmitter {
       await rpc.request("client.capabilities", { server_requests: true });
       const session = await rpc.request<{
         session_id: string;
-        stored_session_id: string;
-      }>("session.create", { cwd: agent.workspace });
-      if (!session.session_id || !session.stored_session_id)
+        stored_session_id?: string;
+        resumed?: string;
+        session_key?: string;
+      }>(
+        resume ? "session.resume" : "session.create",
+        resume
+          ? {
+              session_id: resume.requestedStoredSessionId,
+              defer_history: true,
+              eager_build: false,
+              omit_messages: true,
+            }
+          : { cwd: agent.workspace, title: `${agent.name} conversation` },
+      );
+      const storedId = resume ? session.session_key : session.stored_session_id;
+      if (
+        !session.session_id ||
+        !storedId ||
+        (resume &&
+          (session.resumed !== resume.resolvedStoredSessionId ||
+            storedId !== resume.resolvedStoredSessionId))
+      )
         throw new Error(
           "Hermes did not provide a valid live/stored session binding.",
         );
       agent.liveSessionId = session.session_id;
-      agent.storedSessionId = session.stored_session_id;
+      agent.storedSessionId = storedId;
+      agent.turnId = null;
+      agent.activeMessageId = null;
+      agent.terminal = undefined;
       agent.conversations.push({
         epoch: agent.epoch!,
         liveSessionId: session.session_id,
-        storedSessionId: session.stored_session_id,
-        storedSessionIds: [session.stored_session_id],
+        storedSessionId: storedId,
+        storedSessionIds: resume
+          ? [...new Set([resume.requestedStoredSessionId, storedId])]
+          : [storedId],
+        ...(resume
+          ? {
+              resumedFrom: {
+                historyId: historyId!,
+                requestedStoredSessionId: resume.requestedStoredSessionId,
+                resolvedStoredSessionId: resume.resolvedStoredSessionId,
+                source: resume.source,
+                profileName: resume.profileName,
+              },
+            }
+          : {}),
         createdAt: now(),
       });
       agent.lifecycle = "ready";
@@ -852,6 +1005,13 @@ export class Office extends EventEmitter {
     }
   }
   async stop(id: string) {
+    if (this.conversationWriters.has(id))
+      throw new OfficeError(
+        "Wait for the conversation transition to finish before stopping.",
+      );
+    return this.stopRuntime(id);
+  }
+  private async stopRuntime(id: string) {
     const agent = this.get(id);
     const rpc = this.runtimes.get(id);
     if (!rpc) {

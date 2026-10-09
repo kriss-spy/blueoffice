@@ -28,6 +28,11 @@ class ProfileError(Exception):
     pass
 
 
+def validate_resume_policy(config):
+    if config.get("desktop", {}).get("auto_continue", {}).get("enabled") is not False:
+        raise ProfileError("Automatic continuation is not disabled. Stop this assistant, open Settings and save its managed configuration before starting or resuming.")
+
+
 def validate_approval_policy(home, config, fixture=False):
     if config.get("approvals", {}).get("mode", "manual") != "manual":
         return
@@ -198,6 +203,7 @@ class Settings:
         wanted = copy.deepcopy(config)
         routing = request["routing"]
         deep_merge(wanted, routing)
+        deep_merge(wanted, {"desktop": {"auto_continue": {"enabled": False}}})
         wanted.pop("fallback_model", None)
         for block in wanted.get("auxiliary", {}).values():
             if isinstance(block, dict):
@@ -216,12 +222,14 @@ class Settings:
                            "platform_toolsets": {"cli": values["toolsets"]},
                            "approvals": {"mode": values["approvalMode"]}})
         validate_approval_policy(self.home, wanted, self.fixture)
+        validate_resume_policy(wanted)
         # Recheck after parsing/validation, immediately before native publication.
         if request["expectedRevision"] != revision(self.home):
             raise ProfileError("Profile changed during validation. Reload settings.")
         sections = {}
         try:
             self.save_config(wanted)
+            validate_resume_policy(self.config())
             actual = self.snapshot()["values"]
             for field in ("workspace", "model", "toolsets", "approvalMode"):
                 matched = actual[field] == values[field]

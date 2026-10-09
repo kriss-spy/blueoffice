@@ -23,6 +23,7 @@ import {
   type AvatarMotion,
 } from "./avatar";
 
+import { packSceneMarkers } from "../../shared/scene-markers";
 import { seatedPlacement, type SeatingTarget } from "../../shared/seating";
 
 export type Metrics = {
@@ -47,23 +48,39 @@ export type CameraCommand = {
   target?: Point;
 };
 export class SceneBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; fallback?: ReactNode; onFailure?: () => void },
   { failed: boolean }
 > {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  render() {
-    return this.state.failed ? (
-      <div className="scene-fallback" role="alert">
-        The 3D preview could not start. The agent controls and chat remain
-        available. Reload to retry.
-      </div>
-    ) : (
-      this.props.children
-    );
+  componentDidCatch() {
+    this.props.onFailure?.();
   }
+  render() {
+    return this.state.failed
+      ? (this.props.fallback ?? (
+          <div className="scene-fallback" role="alert">
+            The 3D preview could not start. The agent controls and chat remain
+            available. Reload to retry.
+          </div>
+        ))
+      : this.props.children;
+  }
+}
+export function SceneContextEvents({ onLost }: { onLost: () => void }) {
+  const { gl } = useThree();
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const lost = (event: Event) => {
+      event.preventDefault();
+      onLost();
+    };
+    canvas.addEventListener("webglcontextlost", lost);
+    return () => canvas.removeEventListener("webglcontextlost", lost);
+  }, [gl, onLost]);
+  return null;
 }
 export function Camera({
   command,
@@ -187,7 +204,11 @@ export function Avatar({
   metrics,
   onSelect,
   seating,
+  heading,
+  cueKey,
 }: {
+  heading?: number;
+  cueKey?: string;
   asset: AvatarAsset;
   seating?: SeatingTarget;
   id: string;
@@ -220,7 +241,10 @@ export function Avatar({
     instance.mixer.stopAllAction();
     const action = instance.mixer.clipAction(clip);
     action.reset();
-    action.setLoop(motion === "react" ? LoopOnce : LoopRepeat, Infinity);
+    action.setLoop(
+      motion === "react" ? LoopOnce : LoopRepeat,
+      motion === "react" ? 1 : Infinity,
+    );
     action.clampWhenFinished = true;
     action.play();
     instance.mixer.setTime(time);
@@ -228,7 +252,7 @@ export function Avatar({
       instance.mixer.stopAllAction();
       instance.mixer.uncacheRoot(instance.scene);
     };
-  }, [instance, clip]);
+  }, [instance, clip, cueKey]);
   useEffect(() => {
     instance.mixer.clipAction(clip).reset().play();
     instance.mixer.setTime(time);
@@ -261,7 +285,7 @@ export function Avatar({
   return (
     <group
       position={position}
-      rotation={[0, (rotation * Math.PI) / 2, 0]}
+      rotation={[0, heading ?? (rotation * Math.PI) / 2, 0]}
       onClick={(event) => {
         event.stopPropagation();
         onSelect();
@@ -295,23 +319,77 @@ export function Labels({
   anchors,
   metrics,
   onMetrics,
+  priorities,
 }: {
   markers: React.RefObject<(HTMLButtonElement | null)[]>;
   anchors: Point[];
   metrics: React.RefObject<Metrics>;
   onMetrics: (metrics: Metrics) => void;
+  priorities?: number[];
 }) {
   const { camera, size, gl } = useThree();
   const elapsed = useRef(0);
+  const sizes = useRef(
+    new WeakMap<
+      HTMLElement,
+      { signature: string; width: number; height: number }
+    >(),
+  );
+  const lastPacking = useRef("");
   useFrame((_, delta) => {
-    anchors.forEach((point, i) => {
+    const projected = anchors.flatMap((point, i) => {
       const node = markers.current[i];
-      if (!node) return;
+      if (!node) return [];
       const p = new Vector3(...point).project(camera);
-      node.style.transform = `translate(-50%,-100%) translate(${((p.x + 1) * size.width) / 2}px,${((1 - p.y) * size.height) / 2}px)`;
-      node.style.visibility =
-        Math.abs(p.x) < 1 && Math.abs(p.y) < 1 ? "visible" : "hidden";
+      const visible = Math.abs(p.x) < 1 && Math.abs(p.y) < 1;
+      node.style.visibility = visible ? "visible" : "hidden";
+      if (!visible) return [];
+      const signature = `${node.textContent}/${node.className}/${size.width}`;
+      let measured = sizes.current.get(node);
+      if (!measured || measured.signature !== signature) {
+        node.removeAttribute("data-collapsed");
+        measured = {
+          signature,
+          width: node.offsetWidth,
+          height: node.offsetHeight,
+        };
+        sizes.current.set(node, measured);
+      }
+      return [
+        {
+          id: i,
+          x: ((p.x + 1) * size.width) / 2,
+          y: ((1 - p.y) * size.height) / 2,
+          width: measured.width,
+          height: measured.height,
+          priority: priorities?.[i] ?? 0,
+        },
+      ];
     });
+    const packing = JSON.stringify([
+      size.width,
+      size.height,
+      projected.map((p) => [
+        p.id,
+        Math.round(p.x),
+        Math.round(p.y),
+        p.width,
+        p.height,
+        p.priority,
+      ]),
+    ]);
+    if (packing !== lastPacking.current) {
+      lastPacking.current = packing;
+      for (const placed of packSceneMarkers(
+        projected,
+        size.width,
+        size.height,
+      )) {
+        const node = markers.current[placed.id]!;
+        node.dataset.collapsed = String(placed.collapsed);
+        node.style.transform = `translate(-50%,-100%) translate(${placed.x}px,${placed.y}px)`;
+      }
+    }
     elapsed.current += delta;
     if (elapsed.current > 0.5) {
       elapsed.current = 0;

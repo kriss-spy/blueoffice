@@ -205,7 +205,7 @@ try {
         await writeFile(path, JSON.stringify(cfg));
         await assert.rejects(
           office.start(id),
-          /effective model.*verified BlueOffice route/,
+          /effective route, approval policy or passive-resume policy.*verified BlueOffice configuration/,
         );
         cfg.providers[route.provider.slice(7)].base_url = route.endpoint;
         await writeFile(path, JSON.stringify(cfg));
@@ -236,7 +236,7 @@ try {
           await writeFile(path, JSON.stringify(modified));
           await assert.rejects(
             office.start(id),
-            /effective model.*verified BlueOffice route/,
+            /effective route, approval policy or passive-resume policy.*verified BlueOffice configuration/,
           );
         }
         const modified = structuredClone(cfg);
@@ -246,7 +246,7 @@ try {
         await writeFile(path, JSON.stringify(modified));
         await assert.rejects(
           office.start(id),
-          /effective model.*verified BlueOffice route/,
+          /effective route, approval policy or passive-resume policy.*verified BlueOffice configuration/,
         );
         await writeFile(path, JSON.stringify(cfg));
         record.checks.push(

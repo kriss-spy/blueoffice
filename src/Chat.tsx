@@ -20,6 +20,7 @@ export function Chat({
   focusRequest,
   acting,
   settings,
+  newConversation,
 }: {
   agent: OfficeAgent;
   connected: boolean;
@@ -27,6 +28,7 @@ export function Chat({
   focusRequest?: { id: string };
   acting: boolean;
   settings: () => void;
+  newConversation: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -65,6 +67,19 @@ export function Chat({
   const pending = view.requests;
   const ready =
     connected && agent.lifecycle === "ready" && agent.freshness === "current";
+  const conversationReason =
+    !connected || agent.freshness !== "current"
+      ? "Reconnect and verify this assistant before changing conversations."
+      : !["ready", "stopped"].includes(agent.lifecycle)
+        ? "Wait for this assistant to finish starting or stopping. Recover an uncertain runtime first."
+        : agent.busy ||
+            pending.length ||
+            (agent.lifecycle === "ready" &&
+              ["working", "tool", "interrupting", "unknown"].includes(
+                agent.work,
+              ))
+          ? "Finish or explicitly stop the current task before starting a new conversation."
+          : "";
   useEffect(() => {
     if (follow.current && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
@@ -169,6 +184,24 @@ export function Chat({
         <button disabled={!connected} onClick={settings}>
           Agent settings
         </button>
+        <button
+          disabled={acting || sending || !!conversationReason}
+          title={
+            conversationReason ||
+            "Start a fresh conversation with the same assistant, character and workstation."
+          }
+          onClick={() => {
+            setError("");
+            void newConversation().catch((err) =>
+              setError((err as Error).message),
+            );
+          }}
+        >
+          New conversation
+        </button>
+        {conversationReason && (
+          <small role="status">{conversationReason}</small>
+        )}
         <details className="chat-agent-details">
           <summary>Agent details</summary>
           <dl>
