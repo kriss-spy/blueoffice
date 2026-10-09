@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 REVISION = "f1247d2e0146bbd8edd4e510b9e67e0d259509a4"
 SCHEMA = 30
 LIMIT = 500
-CAPABILITY = {"reader": "hermes-f1247d2e-schema30-readonly-v1", "textSearch": "public-loaded", "lineage": False, "resume": False, "resumeReason": "Resume has not yet been verified for this history source."}
+CAPABILITY = {"reader": "hermes-f1247d2e-schema30-readonly-v1", "textSearch": "public-loaded", "lineage": True, "resume": False, "resumeReason": "Resume has not yet been verified for this history source."}
 
 
 def safe(value, limit=32000):
@@ -41,6 +41,20 @@ def number(value):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0 else None
 
 
+def delegate_parent(row):
+    if row.get("source") != "subagent":
+        return None
+    try:
+        raw = row.get("model_config")
+        config = json.loads(raw) if isinstance(raw, str) and raw else raw or {}
+        parent = config.get("_delegate_from") if isinstance(config, dict) else None
+        if isinstance(parent, str) and 0 < len(parent) <= 300 and parent == row.get("parent_session_id") and parent != row.get("id"):
+            return parent
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
 def record(row):
     actual, estimated = number(row.get("actual_cost_usd")), number(row.get("estimated_cost_usd"))
     # Native usage updates coalesce an absent estimate to zero. Only typed,
@@ -56,7 +70,7 @@ def record(row):
         cost, kind = 0, "included"
     # Schema defaults are not measurements; calls must establish usage exists.
     measured = number(row.get("api_call_count")) not in (None, 0)
-    return {"storedSessionId": row["id"], "title": safe(row.get("title"), 300), "source": safe(row.get("source"), 100) or "unknown", "startedAt": timestamp(row.get("started_at")), "lastActivityAt": timestamp(row.get("last_activity_at")) or timestamp(row.get("started_at")), "endedAt": timestamp(row.get("ended_at")), "endReason": safe(row.get("end_reason"), 100) or None, "parentStoredSessionId": None,
+    return {"storedSessionId": row["id"], "title": safe(row.get("title"), 300), "source": safe(row.get("source"), 100) or "unknown", "startedAt": timestamp(row.get("started_at")), "lastActivityAt": timestamp(row.get("last_activity_at")) or timestamp(row.get("started_at")), "endedAt": timestamp(row.get("ended_at")), "endReason": safe(row.get("end_reason"), 100) or None, "parentStoredSessionId": delegate_parent(row), "lineageEvidence": "native-delegate-marker" if delegate_parent(row) else None,
             "metrics": {"inputTokens": number(row.get("input_tokens")) if measured else None, "outputTokens": number(row.get("output_tokens")) if measured else None, "calls": number(row.get("api_call_count")) if measured else None, "costUsd": cost, "costKind": kind}}
 
 
@@ -99,7 +113,7 @@ def read(home, stored_id, source):
         if not version or version[0] != SCHEMA:
             raise ValueError("History schema is unsupported; run the compatibility probe")
         # Never use title/prefix/resume-chain resolution: inspection addresses the exact stored id.
-        sql = "SELECT id,title,source,started_at,last_activity_at,ended_at,end_reason,input_tokens,output_tokens,api_call_count,actual_cost_usd,estimated_cost_usd,cost_status,cost_source FROM sessions"
+        sql = "SELECT id,title,source,started_at,last_activity_at,ended_at,end_reason,input_tokens,output_tokens,api_call_count,actual_cost_usd,estimated_cost_usd,cost_status,cost_source,parent_session_id,model_config FROM sessions"
         owner = home.name if home.parent.name == "profiles" else "default"
         params = (owner, stored_id, LIMIT + 1) if stored_id else (owner, LIMIT + 1)
         rows = conn.execute(sql + " WHERE (profile_name IS NULL OR profile_name=?)" + (" AND id=?" if stored_id else "") + " ORDER BY COALESCE(last_activity_at,started_at) DESC LIMIT ?", params).fetchall()

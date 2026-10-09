@@ -37,6 +37,7 @@ export interface HistoryMetrics {
   costKind: "actual" | "estimated" | "included" | null;
 }
 export interface HistoryRecord {
+  lineageEvidence?: "native-delegate-marker" | null;
   storedSessionId: string;
   title: string;
   source: string;
@@ -61,6 +62,15 @@ export interface HistoryReadResult {
   };
 }
 export interface HistorySession extends HistoryRecord {
+  lineage?: {
+    kind: "delegation";
+    parentHistoryId: string | null;
+    parentStoredSessionId: string;
+    parentAgentId: string | null;
+    parentAgentName: string | null;
+    outcome: "completed" | "failed" | "interrupted" | "unknown";
+    outcomeEvidence: "native-event" | null;
+  };
   id: string;
   profileId: string;
   profileName: string;
@@ -85,6 +95,7 @@ export interface HistoryList {
   searchScope: string;
 }
 export interface HistoryDetail {
+  children?: HistorySession[];
   session: HistorySession;
   messages: HistoryMessage[];
   tools: HistoryTool[];

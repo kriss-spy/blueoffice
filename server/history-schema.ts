@@ -3,6 +3,7 @@ import { z } from "zod";
 const at = z.string().datetime({ offset: true }).nullable();
 const metric = z.number().finite().nonnegative().nullable();
 const record = z.object({
+  lineageEvidence: z.literal("native-delegate-marker").nullable().optional(),
   storedSessionId: z.string().min(1).max(300),
   title: z.string().max(300),
   source: z.string().min(1).max(100),

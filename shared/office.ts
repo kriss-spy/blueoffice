@@ -2,6 +2,7 @@ import type { LayoutSnapshot } from "./layout.js";
 import type { AssetRef } from "./assets.js";
 import type { ApprovalDecision } from "./approval.js";
 import type { ModelId, RouteStatus } from "./routes.js";
+import type { CapturedChild } from "./lineage.js";
 export type Lifecycle =
   "stopped" | "starting" | "ready" | "stopping" | "failed" | "unknown";
 export type Work =
@@ -79,6 +80,7 @@ export interface Conversation {
   createdAt: string;
 }
 export interface OfficeAgent {
+  historyChildren?: CapturedChild[];
   activeMessageId?: string | null;
   replay?: { epoch: string; sequence: number };
   terminal?: {

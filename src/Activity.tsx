@@ -51,6 +51,7 @@ export function Activity({
       profile: agent.profileName,
       home: agent.profileHome,
       bindings: agent.conversations,
+      children: agent.historyChildren,
       lifecycle: agent.lifecycle,
       work: agent.work,
       busy: agent.busy,
@@ -135,7 +136,12 @@ export function Activity({
       .then((next) =>
         setDetail((current) =>
           !reloadTranscript && current?.session.id === selected
-            ? { ...current, session: next.session, controls: next.controls }
+            ? {
+                ...current,
+                session: next.session,
+                controls: next.controls,
+                children: next.children,
+              }
             : next,
         ),
       )
@@ -309,6 +315,13 @@ export function Activity({
                 {session.ownership === "observed" ? "Observed" : "Owned"} ·{" "}
                 {session.state}
               </span>
+              {session.lineage && (
+                <span>
+                  Child task of{" "}
+                  {session.lineage.parentAgentName ??
+                    session.lineage.parentStoredSessionId}
+                </span>
+              )}
               <span>Started {date(session.startedAt)}</span>
               <span>Last activity {date(session.lastActivityAt)}</span>
             </button>
@@ -375,10 +388,52 @@ export function Activity({
                 <dt>Lineage</dt>
                 <dd>
                   {detail.session.capability.lineage
-                    ? "Evidenced identifiers available"
+                    ? detail.session.lineage
+                      ? "Evidenced delegation relationship"
+                      : "No evidenced parent relationship"
                     : "Unsupported · lineage has not been captured for this revision"}
                 </dd>
               </dl>
+              {detail.session.lineage && (
+                <div aria-label="Parent task">
+                  <p>
+                    Child task of{" "}
+                    {detail.session.lineage.parentAgentName ??
+                      "Unknown office agent"}{" "}
+                    · stored parent{" "}
+                    {detail.session.lineage.parentStoredSessionId}
+                  </p>
+                  <p>
+                    Outcome: {detail.session.lineage.outcome} ·{" "}
+                    {detail.session.lineage.outcomeEvidence ??
+                      "No captured completion"}
+                    . Parent turn ID: unavailable in the native event stream.
+                  </p>
+                  {detail.session.lineage.parentHistoryId && (
+                    <button
+                      onClick={() =>
+                        setSelected(detail.session.lineage!.parentHistoryId!)
+                      }
+                    >
+                      Inspect parent history
+                    </button>
+                  )}
+                </div>
+              )}
+              {!!detail.children?.length && (
+                <div aria-label="Delegated child tasks">
+                  <h4>Delegated child tasks</h4>
+                  {detail.children.map((child) => (
+                    <button
+                      key={child.id}
+                      onClick={() => setSelected(child.id)}
+                    >
+                      {child.title || child.storedSessionId} · {child.state} ·
+                      Observed
+                    </button>
+                  ))}
+                </div>
+              )}
               <p>{detail.controls.reason}</p>
               <div className="history-controls" aria-label="History controls">
                 <button disabled>Prompt</button>
