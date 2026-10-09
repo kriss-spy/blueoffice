@@ -101,3 +101,15 @@ export function inspectProofGlb(buffer: ArrayBuffer) {
     materials: json.materials?.length ?? 0,
   };
 }
+
+/** Fixed functional items already rendered by Room; submeshes are not separate items. */
+export const roomFurnitureItems: { name: string; position: Point }[] = [
+  { name: "Café counter", position: [-2.2, 0, -2.8] },
+  { name: "Café stool 1", position: [-3.5, 0, -1.75] },
+  { name: "Café stool 2", position: [-2.2, 0, -1.75] },
+  { name: "Café stool 3", position: [-0.9, 0, -1.75] },
+  { name: "Corner plant", position: [4.2, 0, -3.1] },
+  { name: "Floor plant", position: [-4.3, 0, -0.45] },
+  { name: "Espresso machine", position: [-3.23, 1.43, -2.9] },
+  { name: "Tabletop plant", position: [-0.6, 1.13, -2.9] },
+];

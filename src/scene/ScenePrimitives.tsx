@@ -1,13 +1,6 @@
 import { Component, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import {
-  Box3,
-  LoopOnce,
-  LoopRepeat,
-  Mesh,
-  Vector3,
-  type Object3D,
-} from "three";
+import { Box3, LoopOnce, LoopRepeat, Mesh, Vector3 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   type Point,
@@ -221,8 +214,27 @@ export function Avatar({
   onSelect: () => void;
 }) {
   const instance = useMemo(() => cloneAvatar(asset), [asset]);
-  useEffect(() => () => disposeAvatarInstance(instance), [instance]);
+  useEffect(
+    () => () => {
+      disposeAvatarInstance(instance);
+      delete metrics.current.avatars[id];
+    },
+    [instance, id, metrics],
+  );
   const measurement = useRef({ elapsed: 1, box: [] as number[] });
+  const preciseDiagnostics = new URLSearchParams(location.search).has(
+    "scene-debug",
+  );
+  const identity = useMemo(() => {
+    let boneId = "",
+      geometryId = "";
+    instance.scene.traverse((object) => {
+      if (!boneId && object.type === "Bone") boneId = object.uuid;
+      if (!geometryId && object instanceof Mesh)
+        geometryId = object.geometry.uuid;
+    });
+    return { boneId, geometryId };
+  }, [instance]);
   const placement = seatedPlacement(
     asset.clips?.seated &&
       asset.gltf.animations.some((c) => c.name === asset.clips?.seated)
@@ -260,27 +272,26 @@ export function Avatar({
   useFrame((_, delta) => {
     if (playing) instance.mixer.update(Math.min(delta, 0.05));
     instance.scene.updateMatrixWorld(true);
-    let bone: Object3D | undefined;
-    let geometryId = "";
-    instance.scene.traverse((o) => {
-      if (!bone && o.type === "Bone") bone = o;
-      if (!geometryId && o instanceof Mesh) geometryId = o.geometry.uuid;
-    });
     measurement.current.elapsed += delta;
-    if (measurement.current.elapsed > 0.5) {
+    if (
+      measurement.current.elapsed > 0.5 ||
+      metrics.current.avatars[id]?.clip !== clip.name
+    ) {
       measurement.current.elapsed = 0;
-      const box = new Box3().setFromObject(instance.scene, true);
-      measurement.current.box = [...box.min.toArray(), ...box.max.toArray()];
+      // Exact skinned vertex bounds are diagnostic work, never a stale ordinary-mode claim.
+      if (preciseDiagnostics) {
+        const box = new Box3().setFromObject(instance.scene, true);
+        measurement.current.box = [...box.min.toArray(), ...box.max.toArray()];
+      }
+      metrics.current.avatars[id] = {
+        time: instance.mixer.time,
+        pose: boneSignature(instance.scene),
+        ...identity,
+        clip: clip.name,
+        box: preciseDiagnostics ? measurement.current.box : [],
+        seating: motion === "seated" ? placement : undefined,
+      };
     }
-    metrics.current.avatars[id] = {
-      time: instance.mixer.time,
-      pose: boneSignature(instance.scene),
-      boneId: bone?.uuid ?? "",
-      geometryId,
-      clip: clip.name,
-      box: measurement.current.box,
-      seating: motion === "seated" ? placement : undefined,
-    };
   });
   return (
     <group
