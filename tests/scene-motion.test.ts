@@ -118,3 +118,46 @@ test("owned workstation permits only the standing and approach aisles, including
     }
   }
 });
+test("unchanged destinations resume once after editing, graphics pause or restored walk mapping", () => {
+  for (const suspension of [
+    { preempt: true },
+    { paused: true },
+    { canWalk: false },
+  ]) {
+    const controller = new SceneMotionController(),
+      i = intent();
+    controller.update([i], [], 0.1);
+    const stopped = controller.update([{ ...i, ...suspension }], [], 0).a;
+    assert.equal(stopped.walking, false);
+    assert.ok(stopped.reason);
+    const resumed = controller.update([i], [], 0.1).a;
+    assert.equal(resumed.destinationKey, stopped.destinationKey);
+    assert.equal(resumed.reason, undefined);
+    assert.equal(resumed.walking, true);
+    for (let n = 0; n < 40; n++) controller.update([i], [], 0.1);
+    assert.deepEqual(controller.update([i], [], 0.1).a.position, i.goal);
+  }
+  const controller = new SceneMotionController(),
+    working = intent({ goal: [-1, 0, 0] });
+  controller.update([working], [], 0);
+  controller.update([{ ...working, preempt: true }], [], 0);
+  const restored = controller.update([working], [], 0).a;
+  assert.equal(restored.walking, false);
+  assert.equal(restored.reason, undefined);
+  assert.deepEqual(restored.position, working.goal);
+});
+test("resume into an occupied slot retains its real blocker without repeatedly retrying", () => {
+  const controller = new SceneMotionController(),
+    a = intent(),
+    b = intent({
+      id: "b",
+      goal: [1, 0, 0],
+      fallback: [1, 0, 1],
+      canWalk: false,
+    });
+  controller.update([{ ...a, paused: true }, b], [], 0);
+  const blocked = controller.update([a, b], [], 0).a;
+  assert.match(blocked.reason!, /occupied/);
+  assert.equal(blocked.walking, false);
+  assert.deepEqual(controller.update([a], [], 0.1).a, blocked);
+});

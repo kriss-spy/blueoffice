@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Page } from "@playwright/test";
 /** Original engineering triangle with stationary node tracks; never a character/art acceptance fixture. */
-export function sceneTestPack(walk = true, react = true) {
+export function sceneTestPack(walk = true, react = true, seated = false) {
   const binary = Buffer.alloc(68);
   [0, 0, 0, 0.3, 0, 0, 0, 1.4, 0, 0, 1, 0, 0, 0, 0, 0, 0].forEach((n, i) =>
     binary.writeFloatLE(n, i * 4),
@@ -10,6 +10,7 @@ export function sceneTestPack(walk = true, react = true) {
     "Idle",
     ...(walk ? ["Walk"] : []),
     ...(react ? ["React"] : []),
+    ...(seated ? ["Seated"] : []),
   ];
   const gltf = {
     asset: { version: "2.0" },
@@ -66,7 +67,8 @@ export function sceneTestPack(walk = true, react = true) {
       schemaVersion: 1,
       assetId:
         (walk ? "test.scene-motion" : "test.scene-no-walk") +
-        (react ? "" : "-no-react"),
+        (react ? "" : "-no-react") +
+        (seated ? "-seated" : ""),
       version: "v1",
       name: "Original scene engineering fixture",
       model: "avatar.glb",
@@ -79,11 +81,26 @@ export function sceneTestPack(walk = true, react = true) {
         offset: [0, 0, 0],
       },
       anchors: { feet: [0, 0, 0], nameplate: [0, 1.6, 0] },
-      capabilities: { standing: true, seated: false },
+      capabilities: { standing: true, seated },
+      ...(seated
+        ? {
+            seating: {
+              compatibility: ["blueoffice.seated-work.v1"],
+              seat: [0, 0.263, 0.72],
+              pelvis: [0, 0.35, 0.72],
+              leftHand: [-0.115, 0.65, 0.38],
+              rightHand: [0.115, 0.65, 0.38],
+              leftFoot: [-0.105, 0, 0.24],
+              rightFoot: [0.105, 0, 0.24],
+              facing: 0,
+            },
+          }
+        : {}),
       clips: {
         idle: "Idle",
         ...(walk ? { walk: "Walk" } : {}),
         ...(react ? { react: "React" } : {}),
+        ...(seated ? { seated: "Seated" } : {}),
       },
       provenance: {
         source: "Original BlueOffice engineering fixture",
@@ -104,6 +121,7 @@ export async function assignSceneTestPack(
   agentId: string,
   walk = true,
   react = true,
+  seated = false,
 ) {
   return page.evaluate(
     async ({ pack, agentId }) => {
@@ -132,6 +150,6 @@ export async function assignSceneTestPack(
       await post(`/api/agents/${agentId}/avatar`, { ref: imported.ref });
       return imported.ref;
     },
-    { pack: sceneTestPack(walk, react), agentId },
+    { pack: sceneTestPack(walk, react, seated), agentId },
   );
 }

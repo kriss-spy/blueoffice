@@ -202,3 +202,59 @@ test("missing reaction mapping preserves completed text without pretending to ce
     (await frames(agent)).filter((f) => f.method === "prompt.submit"),
   ).toHaveLength(1);
 });
+
+test("unchanged working destination restores seating after Edit Cancel and context Retry without runtime commands", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  const agent = (await snapshot(page)).agents[0];
+  await sparseLayout(page, agent.id);
+  await assignSceneTestPack(page, agent.id, true, true, true);
+  await send(page, "Hina", "slow");
+  await expect
+    .poll(async () => (await scene(page)).agents[0].motion)
+    .toBe("seated");
+  const before = (await snapshot(page)).agents[0],
+    commands = await frames(before),
+    layout = (await scene(page)).layout;
+  await page.getByRole("button", { name: "Edit office", exact: true }).click();
+  await expect
+    .poll(async () => (await scene(page)).agents[0].motion)
+    .toBe("idle");
+  await page
+    .getByRole("button", { name: "Cancel editing", exact: true })
+    .click();
+  await expect
+    .poll(async () => (await scene(page)).agents[0].motion)
+    .toBe("seated");
+  expect((await scene(page)).agents[0].motionReason).toBeUndefined();
+  await page.locator(".live-room canvas").evaluate((canvas) => {
+    const gl = (canvas as HTMLCanvasElement).getContext("webgl2");
+    const extension = gl?.getExtension("WEBGL_lose_context");
+    if (!extension) throw Error("Context loss extension unavailable");
+    extension.loseContext();
+  });
+  await expect(
+    page.getByRole("button", { name: "Retry 3D view", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => (await scene(page)).agents[0].motion)
+    .toBe("idle");
+  await page
+    .getByRole("button", { name: "Retry 3D view", exact: true })
+    .click();
+  await expect.poll(async () => (await scene(page)).scene.ready).toBe(true);
+  await expect
+    .poll(async () => (await scene(page)).agents[0].motion)
+    .toBe("seated");
+  expect((await scene(page)).agents[0].motionReason).toBeUndefined();
+  expect((await scene(page)).layout).toEqual(layout);
+  const after = (await snapshot(page)).agents[0];
+  expect(after.work).toBe(before.work);
+  expect(after.epoch).toBe(before.epoch);
+  expect(after.liveSessionId).toBe(before.liveSessionId);
+  expect(after.turnId).toBe(before.turnId);
+  expect(await frames(after)).toEqual(commands);
+});

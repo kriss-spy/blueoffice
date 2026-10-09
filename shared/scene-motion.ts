@@ -28,6 +28,7 @@ export type SceneActor = {
 export class SceneMotionController {
   private actors = new Map<string, SceneActor>();
   private geometry = "";
+  private suspended = new Set<string>();
   update(
     intents: MotionIntent[],
     placements: LayoutPlacement[],
@@ -38,7 +39,10 @@ export class SceneMotionController {
     this.geometry = geometry;
     const ids = new Set(intents.map((i) => i.id));
     for (const id of this.actors.keys())
-      if (!ids.has(id)) this.actors.delete(id);
+      if (!ids.has(id)) {
+        this.actors.delete(id);
+        this.suspended.delete(id);
+      }
     const reservations: RouteReservation[] = intents.map((intent) => ({
       owner: intent.id,
       points: [
@@ -59,6 +63,7 @@ export class SceneMotionController {
           route: [],
         };
       if (intent.preempt || intent.paused || !intent.canWalk) {
+        this.suspended.add(intent.id);
         actor = {
           position: [...intent.fallback],
           heading: 0,
@@ -71,7 +76,14 @@ export class SceneMotionController {
               ? "Decorative motion paused."
               : "Mapped walk clip unavailable.",
         };
-      } else if (changed || actor.destinationKey !== intent.destinationKey) {
+      } else if (
+        this.suspended.has(intent.id) ||
+        changed ||
+        actor.destinationKey !== intent.destinationKey
+      ) {
+        // Resume once even when editing/graphics suspension kept the same target.
+        // A blocked result consumes this retry and stays stationary until a real change.
+        this.suspended.delete(intent.id);
         const plan = planSceneRoute(
           actor.position,
           intent.goal,
