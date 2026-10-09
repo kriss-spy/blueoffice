@@ -100,7 +100,9 @@ def main():
         node = shutil.which("node")
         if not node:
             parser.error("Node.js is required for the office integration probe")
-        node_root = str(Path(node).resolve().parents[1])
+        # The PATH entry may be a symlink outside the mounted runtime root.
+        node = str(Path(node).resolve())
+        node_root = str(Path(node).parents[1])
         command += ["--ro-bind", node_root, node_root, "--dir", "/office", "--setenv", "BLUEOFFICE_NODE", node, "--setenv", "BLUEOFFICE_SUITE", args.suite]
         # Never expose the checkout wholesale: it may contain live .blueoffice data or credentials.
         for entry in ("server", "shared", "scripts", "tests", "node_modules", "package.json", "tsconfig.json"):
