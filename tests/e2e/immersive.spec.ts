@@ -3,6 +3,8 @@ import {
   expect,
   createAgent,
   selectAgent,
+  openRoster,
+  send,
   snapshot,
   frames,
 } from "./fixtures.js";
@@ -28,11 +30,15 @@ test("the room fills the viewport and conversation windows preserve room size, b
   const chat = page.getByRole("dialog", { name: "Hina", exact: true });
   await expect(chat).toBeVisible();
   expect(await room.boundingBox()).toEqual(initial);
+  await chat.getByLabel("Message Hina").fill("Keep this unfinished task draft");
   await chat.getByRole("button", { name: "Close Hina", exact: true }).click();
   await expect(chat).not.toBeVisible();
   const marker = page.getByRole("button", { name: /^Select Hina: / });
   await marker.click();
   await expect(chat).toBeVisible();
+  await expect(chat.getByLabel("Message Hina")).toHaveValue(
+    "Keep this unfinished task draft",
+  );
   await expect(chat).toHaveJSProperty("open", true);
   expect(await chat.evaluate((node) => node.matches(":modal"))).toBe(false);
   expect(await room.boundingBox()).toEqual(initial);
@@ -47,14 +53,14 @@ test("the room fills the viewport and conversation windows preserve room size, b
   expect(moved.y).toBeGreaterThanOrEqual(8);
   expect(moved.x + moved.width).toBeLessThanOrEqual(1272);
   expect(moved.y + moved.height).toBeLessThanOrEqual(892);
-  await chat.getByLabel("Message Hina").focus();
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(chat).not.toBeVisible();
   await expect(marker).toBeFocused();
   await marker.press("Enter");
   await expect(chat).toBeVisible();
   await page.reload();
-  await expect(page.locator(".conversation-window")).toHaveCount(0);
+  await expect(page.locator(".conversation-window")).not.toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "Select an agent" }),
   ).toHaveCount(0);
@@ -74,4 +80,35 @@ test("the room fills the viewport and conversation windows preserve room size, b
         !["session.events.since", "session.activate"].includes(frame.method),
     ),
   );
+});
+
+test("an exact roster request reopens a closed conversation and focuses the retained request", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  await send(page, "Hina", "single question");
+  const card = page.getByRole("region", { name: "Question request" });
+  await expect(card).toBeVisible();
+  const before = (await snapshot(page)).agents[0];
+  const request = before.requests.at(-1)!;
+  const commands = await frames(before);
+  await page.getByRole("button", { name: "Close Hina", exact: true }).click();
+  await expect(card).not.toBeVisible();
+  const roster = await openRoster(page);
+  await roster
+    .getByRole("button", {
+      name: `Open question for Hina: ${request.id}`,
+      exact: true,
+    })
+    .click();
+  await expect(roster).not.toBeVisible();
+  await expect(card).toBeVisible();
+  await expect(card).toBeFocused();
+  const after = (await snapshot(page)).agents[0];
+  expect(after.requests).toEqual(before.requests);
+  expect(after.epoch).toBe(before.epoch);
+  expect(after.liveSessionId).toBe(before.liveSessionId);
+  expect(await frames(after)).toEqual(commands);
 });
