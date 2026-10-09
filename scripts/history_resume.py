@@ -53,6 +53,8 @@ def plan(home, stored_id, model, agent_id, source):
             cfg = json.loads(raw) if isinstance(raw, str) and raw else raw or {}
             if not isinstance(cfg, dict):
                 raise ResumeError("Stored route metadata is malformed.")
+            if candidate.get("model") not in (None, "", model) or cfg.get("model") not in (None, "", model):
+                raise ResumeError("Stored conversation model differs from this assistant's managed route. Stop and reconfigure this assistant to that admitted model before resuming.")
             if any(cfg.get(k) for k in ("api_key", "key_env", "api_key_env", "key_cmd", "extra_headers", "extra_body", "request_overrides")):
                 raise ResumeError("Stored route contains unsupported credential or request overrides.")
             overrides = server._stored_session_runtime_overrides(candidate)
