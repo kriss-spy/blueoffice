@@ -165,6 +165,7 @@ async function integration() {
   for (const [name, script] of [
     ["history", "scripts/history_probe.py"],
     ["resume", "scripts/history_resume_probe.py"],
+    ["lineage", "scripts/history_lineage_probe.py"],
   ]) {
     const evidence = resolve(output, `hermes-${name}`);
     await run(
