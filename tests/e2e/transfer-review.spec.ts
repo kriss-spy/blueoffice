@@ -5,6 +5,9 @@ test("an open unreviewed character preview cannot authorize a portable assignmen
   page,
   office,
 }) => {
+  // This checks a completed preview cycle, not a hardware frame-rate target.
+  // The software-rendered CI scene advances its mixer by at most 50ms/frame.
+  test.setTimeout(60_000);
   await page.goto(office.url);
   await createAgent(page, "Hina");
   const ref = await page.evaluate(async (pack) => {
@@ -26,7 +29,7 @@ test("an open unreviewed character preview cannot authorize a portable assignmen
     .click();
   await expect(
     page.getByRole("button", { name: "Mark this clip reviewed", exact: true }),
-  ).toBeEnabled();
+  ).toBeEnabled({ timeout: 30_000 });
   const applied = await page.evaluate(async (ref) => {
     const { csrf } = await (await fetch("/api/session")).json();
     const manifest = await (await fetch("/api/layout/export")).json();
