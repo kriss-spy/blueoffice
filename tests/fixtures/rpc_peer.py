@@ -106,6 +106,11 @@ def task(prompt, generation):
     if generation != cancel_generation:
         return
     lower = prompt.lower()
+    if "fail quota" in lower or "fail proxy" in lower:
+        busy = False
+        event("message.complete", {"status": "failed", "error": "usage_limit_reached PRIVATE_PROVIDER_CANARY" if "fail quota" in lower else "Connection refused PRIVATE_PROVIDER_CANARY"})
+        event("session.info", {"running": False})
+        return
     if "history stream" in lower:
         for index in range(8):
             if generation != cancel_generation:
