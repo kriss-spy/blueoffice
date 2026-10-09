@@ -6,8 +6,12 @@ import {
   type LayoutSnapshot,
   type LayoutDraft,
 } from "../shared/layout.js";
+import {
+  portableAgentCapacity,
+  portableIdentityCount,
+} from "../shared/layout-transfer.js";
 import { LayoutError } from "./layout.js";
-import type { CharacterPack } from "../shared/assets.js";
+import type { AssetRef, CharacterPack } from "../shared/assets.js";
 import { randomUUID } from "node:crypto";
 import { agentChange, type OfficeEvent } from "../shared/events.js";
 import { DatabaseSync } from "node:sqlite";
@@ -16,12 +20,17 @@ import { dirname } from "node:path";
 import type { OfficeAgent } from "../shared/office.js";
 import type { ModelId } from "../shared/routes.js";
 
+export interface LayoutTransferWrite {
+  references: NonNullable<LayoutSnapshot["references"]>;
+  avatars: Record<string, AssetRef | null>;
+}
 export interface AdoptionIntent {
   id: string;
   name: string;
   profileHome: string;
   model: ModelId;
   workspace: string;
+  placement?: { avatar: AssetRef | null; deskId: string | null };
 }
 
 /** Office records and normalized events never write Hermes' database. */
@@ -124,6 +133,10 @@ export class OfficeStore {
         draft,
         Number(rows[0].revision) + 1,
         parsed.data.revision,
+        {
+          references: parsed.data.references ?? [],
+          avatars: parsed.data.avatars ?? {},
+        },
       );
     }
     // If every revision is unreadable, retain safe agent state and regenerate a known valid room.
@@ -132,7 +145,26 @@ export class OfficeStore {
     );
     return this.writeLayout(draft, Number(rows[0].revision) + 1, 0);
   }
-  saveLayout(input: LayoutSave): LayoutSnapshot {
+  /** Preflight before profile preparation; save() also enforces this atomically. */
+  assertCanAddAgents(count = 1): void {
+    const snapshot = this.layoutSnapshot();
+    if (
+      portableIdentityCount(
+        snapshot.references ?? [],
+        this.agents().map((agent) => agent.id),
+      ) +
+        count >
+      portableAgentCapacity
+    )
+      throw new LayoutError(
+        `Cannot add an assistant: the office uses all ${portableAgentCapacity} portable reference slots. Resolve imported references before adding another assistant.`,
+        422,
+      );
+  }
+  saveLayout(
+    input: LayoutSave,
+    transfer?: LayoutTransferWrite,
+  ): LayoutSnapshot {
     const current = this.layoutSnapshot();
     if (input.baseRevision !== current.revision)
       throw new LayoutError(
@@ -153,12 +185,18 @@ export class OfficeStore {
         issues.map((issue) => issue.message).join(" "),
         422,
       );
-    return this.writeLayout(input.draft, current.revision + 1);
+    return this.writeLayout(
+      input.draft,
+      current.revision + 1,
+      undefined,
+      transfer,
+    );
   }
   private writeLayout(
     draft: LayoutDraft,
     revision: number,
     recoveredFrom?: number,
+    transfer?: LayoutTransferWrite,
   ): LayoutSnapshot {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -173,8 +211,38 @@ export class OfficeStore {
         throw new LayoutError(
           "The office layout changed while saving. Reload the latest revision before trying again.",
         );
+      const previousRow = this.db
+        .prepare("SELECT body FROM layout_revisions WHERE revision=?")
+        .get(revision - 1);
+      let previousSnapshot: LayoutSnapshot | undefined;
+      try {
+        previousSnapshot = layoutSnapshotSchema.parse(
+          JSON.parse(String(previousRow?.body)),
+        );
+      } catch {
+        /* Recovery ignores corrupt rows. */
+      }
+      const avatarBindings = Object.fromEntries(
+        this.agents().map((agent) => [agent.id, agent.avatar ?? null]),
+      );
+      if (previousSnapshot && !previousSnapshot.avatars) {
+        previousSnapshot.avatars = avatarBindings;
+        this.db
+          .prepare("UPDATE layout_revisions SET body=? WHERE revision=?")
+          .run(JSON.stringify(previousSnapshot), revision - 1);
+      }
       const snapshot: LayoutSnapshot = {
         ...draft,
+        references:
+          transfer?.references ??
+          (previousSnapshot?.references ?? []).map((ref) => {
+            const id = ref.boundAgentId;
+            return id &&
+              previousSnapshot?.assignments[id] !== draft.assignments[id]
+              ? { ...ref, deskId: draft.assignments[id] ?? null }
+              : ref;
+          }),
+        avatars: { ...avatarBindings, ...transfer?.avatars },
         schemaVersion: 1,
         revision,
         ...(recoveredFrom === undefined ? {} : { recoveredFrom }),
@@ -184,8 +252,23 @@ export class OfficeStore {
         .run(revision, JSON.stringify(snapshot));
       for (const previous of this.agents()) {
         const deskId = draft.assignments[previous.id] ?? null;
-        if (previous.deskId === deskId) continue;
-        const agent = { ...previous, deskId };
+        const changesAvatar = transfer && previous.id in transfer.avatars;
+        const avatar = changesAvatar
+          ? transfer.avatars[previous.id]
+          : previous.avatar;
+        if (
+          previous.deskId === deskId &&
+          (!changesAvatar ||
+            JSON.stringify(previous.avatar ?? null) === JSON.stringify(avatar))
+        )
+          continue;
+        const agent = {
+          ...previous,
+          deskId,
+          ...(changesAvatar
+            ? { avatar, avatarId: avatar?.assetId ?? "unassigned" }
+            : {}),
+        };
         this.db
           .prepare("UPDATE agents SET body=? WHERE id=?")
           .run(JSON.stringify(agent), agent.id);
@@ -217,7 +300,14 @@ export class OfficeStore {
         "SELECT revision,body FROM layout_revisions ORDER BY revision DESC LIMIT 1",
       )
       .get();
-    if (!row) return;
+    if (!row) {
+      if (!wasKnown && this.agents().length > portableAgentCapacity)
+        throw new LayoutError(
+          `Cannot add more than ${portableAgentCapacity} portable assistants.`,
+          422,
+        );
+      return;
+    }
     let value: unknown;
     try {
       value = JSON.parse(String(row.body));
@@ -227,6 +317,15 @@ export class OfficeStore {
     const parsed = layoutSnapshotSchema.safeParse(value);
     if (!parsed.success || validateLayout(parsed.data).length) return;
     const ids = new Set(this.agents().map((current) => current.id));
+    if (
+      !wasKnown &&
+      portableIdentityCount(parsed.data.references ?? [], [...ids]) >
+        portableAgentCapacity
+    )
+      throw new LayoutError(
+        `Cannot add an assistant: the office already uses all ${portableAgentCapacity} portable reference slots. Resolve imported references before adding another assistant.`,
+        422,
+      );
     // Runtime state can still be persisted while a corrupt layout awaits recovery.
     if (
       Object.keys(parsed.data.assignments).some((id) => !ids.has(id)) ||
@@ -234,11 +333,30 @@ export class OfficeStore {
       [...ids].some((id) => id !== agent.id && !(id in parsed.data.assignments))
     )
       return;
-    if (parsed.data.assignments[agent.id] === agent.deskId) return;
+    const avatarChanged =
+      parsed.data.avatars &&
+      JSON.stringify(parsed.data.avatars[agent.id] ?? null) !==
+        JSON.stringify(agent.avatar ?? null);
+    if (parsed.data.assignments[agent.id] === agent.deskId && !avatarChanged)
+      return;
     const updated: LayoutSnapshot = {
       ...parsed.data,
       revision: Number(row.revision) + 1,
       assignments: { ...parsed.data.assignments, [agent.id]: agent.deskId },
+      references: parsed.data.references?.map((ref) =>
+        ref.boundAgentId === agent.id &&
+        parsed.data.assignments[agent.id] !== agent.deskId
+          ? { ...ref, deskId: agent.deskId }
+          : ref,
+      ),
+      ...(parsed.data.avatars
+        ? {
+            avatars: {
+              ...parsed.data.avatars,
+              [agent.id]: agent.avatar ?? null,
+            },
+          }
+        : {}),
     };
     delete updated.recoveredFrom;
     if (validateLayout(updated).length)
@@ -349,6 +467,13 @@ export class OfficeStore {
     key: string,
     command?: { id: string; fingerprint: string },
   ): void {
+    // Recover a damaged layout before checking new identity capacity; never discard
+    // its previous valid unresolved references merely because the newest row is corrupt.
+    if (
+      this.hasSavedLayout() &&
+      !this.agents().some((current) => current.id === agent.id)
+    )
+      this.assertCanAddAgents();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const previous = this.db

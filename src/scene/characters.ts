@@ -15,9 +15,16 @@ export async function characterRequest<T>(url: string): Promise<T> {
     throw new Error(data.error ?? "Character could not be loaded.");
   return data;
 }
-export async function loadCharacter(ref: AssetRef): Promise<AvatarAsset> {
+export async function loadCharacter(
+  ref: AssetRef,
+  preview = false,
+): Promise<AvatarAsset> {
   const base = `/api/characters/${assetKey(ref)}`;
   const pack = await characterRequest<CharacterPack>(base);
+  if (!preview && !pack.review)
+    throw new Error(
+      "Preview and review this exact character version in Characters before using it in the office.",
+    );
   const urls = new Map<string, string>();
   const buffers = new Map<string, ArrayBuffer>();
   try {
@@ -96,13 +103,14 @@ type Entry = {
   disposal?: ReturnType<typeof setTimeout>;
 };
 const cache = new Map<string, Entry>();
-function acquire(ref: AssetRef) {
-  const key = assetKey(ref);
+function acquire(ref: AssetRef, preview: boolean) {
+  // Review previews never confer assignment eligibility through a shared cache.
+  const key = `${preview ? "preview" : "assigned"}:${assetKey(ref)}`;
   let entry = cache.get(key);
   if (!entry) {
     entry = { users: 0, result: Promise.resolve({}) };
     const current = entry;
-    current.result = loadCharacter(ref)
+    current.result = loadCharacter(ref, preview)
       .then(
         (asset) => ({ asset }),
         (error) => ({ error: (error as Error).message }),
@@ -136,7 +144,10 @@ export function retryMissingCharacters() {
 }
 
 /** A single load per unique pack, with independent skeletons/mixers per Avatar. */
-export function useCharacters(refs: (AssetRef | null | undefined)[]) {
+export function useCharacters(
+  refs: (AssetRef | null | undefined)[],
+  preview = false,
+) {
   const refsKey = JSON.stringify([
     ...new Map(
       refs.filter((r): r is AssetRef => !!r).map((r) => [assetKey(r), r]),
@@ -149,24 +160,34 @@ export function useCharacters(refs: (AssetRef | null | undefined)[]) {
     return () =>
       window.removeEventListener("blueoffice-character-refresh", refresh);
   }, []);
-  const [loaded, setLoaded] = useState<Record<string, Loaded>>({});
+  const [loaded, setLoaded] = useState<{
+    preview: boolean;
+    values: Record<string, Loaded>;
+  }>({ preview, values: {} });
   useEffect(() => {
     let active = true;
     const unique: AssetRef[] = JSON.parse(refsKey);
-    setLoaded((previous) =>
-      Object.fromEntries(
-        unique.flatMap((ref) =>
-          previous[assetKey(ref)]?.asset
-            ? [[assetKey(ref), previous[assetKey(ref)]]]
-            : [],
-        ),
-      ),
-    );
+    setLoaded((previous) => ({
+      preview,
+      values:
+        previous.preview === preview
+          ? Object.fromEntries(
+              unique.flatMap((ref) =>
+                previous.values[assetKey(ref)]?.asset
+                  ? [[assetKey(ref), previous.values[assetKey(ref)]]]
+                  : [],
+              ),
+            )
+          : {},
+    }));
     const handles = unique.map((ref) => {
-      const handle = acquire(ref);
+      const handle = acquire(ref, preview);
       void handle.result.then((value) => {
         if (active)
-          setLoaded((previous) => ({ ...previous, [assetKey(ref)]: value }));
+          setLoaded((previous) => ({
+            preview,
+            values: { ...previous.values, [assetKey(ref)]: value },
+          }));
       });
       return handle;
     });
@@ -174,6 +195,6 @@ export function useCharacters(refs: (AssetRef | null | undefined)[]) {
       active = false;
       handles.forEach((h) => h.release());
     };
-  }, [refsKey, retry]);
-  return loaded;
+  }, [refsKey, retry, preview]);
+  return loaded.preview === preview ? loaded.values : {};
 }

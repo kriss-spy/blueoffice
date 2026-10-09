@@ -1,3 +1,4 @@
+import { LayoutTransferService } from "./layout-transfer.js";
 import { CharacterRegistry } from "./assets.js";
 import { resolve } from "node:path";
 import { OfficeStore } from "./store.js";
@@ -14,10 +15,12 @@ const office = new Office(
   fixture ? new FixtureRuntime(data) : new HermesRuntime(),
 );
 await office.recoverAdoptions();
+const characters = new CharacterRegistry(store, resolve(data, "characters"));
 const app = officeServer(
   office,
   resolve("dist"),
-  new CharacterRegistry(store, resolve(data, "characters")),
+  characters,
+  new LayoutTransferService(store, () => characters.list()),
 );
 const port = Number(process.env.BLUEOFFICE_PORT ?? 4310);
 if (!Number.isInteger(port) || port < 0 || port > 65535)

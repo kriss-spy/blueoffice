@@ -6,6 +6,9 @@ import type {
   SettingsResult,
 } from "../shared/settings";
 import type { RouteStatus } from "../shared/routes";
+import { NewAssignmentFields } from "./newAssignmentFields";
+import type { LayoutSnapshot } from "../shared/layout";
+import type { SetupPlacement } from "../shared/setup";
 import { command } from "./api";
 
 const sectionLabels: Record<string, string> = {
@@ -22,13 +25,19 @@ export function SettingsDialog({
   close,
   adopted,
   initialPath = "",
+  layout,
 }: {
   agent?: OfficeAgent;
   routes: RouteStatus[];
   close: () => void;
   adopted: (id: string) => void;
   initialPath?: string;
+  layout?: LayoutSnapshot;
 }) {
+  const [placement, setPlacement] = useState<SetupPlacement>({
+    avatar: null,
+    deskId: null,
+  });
   const dialog = useRef<HTMLDialogElement>(null);
   const [snapshot, setSnapshot] = useState<ProfileSnapshot>();
   const [values, setValues] = useState<ProfileSettings>();
@@ -112,6 +121,7 @@ export function SettingsDialog({
           expectedRevision: snapshot.revision,
           values,
           acknowledgeOwnership: acknowledged,
+          placement,
         })) as { agent: OfficeAgent | null; result: SettingsResult };
         if (saved.agent) {
           adopted(saved.agent.id);
@@ -293,6 +303,13 @@ export function SettingsDialog({
                 <option value="off">Run without permission prompts</option>
               </select>
             </label>
+            {!agent ? (
+              <NewAssignmentFields
+                layout={layout}
+                value={placement}
+                onChange={setPlacement}
+              />
+            ) : null}
             {!agent ? (
               <label className="ownership-choice">
                 <input

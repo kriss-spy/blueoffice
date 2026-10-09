@@ -53,7 +53,7 @@ export function CharacterLibrary({
   const markers = useRef<(HTMLButtonElement | null)[]>([]);
   const [observed, setObserved] = useState<Metrics>({ avatars: {} });
   const pack = packs.find((p) => assetKey(p.ref) === selected);
-  const loaded = useCharacters([pack?.ref]);
+  const loaded = useCharacters([pack?.ref], true);
   const asset = pack && loaded[assetKey(pack.ref)]?.asset;
   const diagnostic =
     pack && (pack.diagnostic || loaded[assetKey(pack.ref)]?.error);

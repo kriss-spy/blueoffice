@@ -1,3 +1,5 @@
+import { completeWorkstation } from "../shared/layout.js";
+import { setupPlacementSchema, type SetupPlacement } from "../shared/setup.js";
 import type { AssetRef } from "../shared/assets.js";
 import { recoverHistory, prepareRecoverySnapshot } from "./recovery.js";
 import { availableDesk } from "../shared/scene.js";
@@ -66,12 +68,33 @@ export class Office extends EventEmitter {
   readonly layouts: LayoutService;
   layout(): LayoutSnapshot {
     const layout = this.layouts.snapshot();
-    for (const agent of this.agents.values())
+    const stored = new Map(
+      this.store.agents().map((agent) => [agent.id, agent]),
+    );
+    for (const agent of this.agents.values()) {
       agent.deskId = layout.assignments[agent.id] ?? null;
+      const saved = stored.get(agent.id);
+      if (saved) {
+        agent.avatar = saved.avatar;
+        agent.avatarId = saved.avatarId;
+      }
+    }
     return layout;
   }
-  saveLayout(input: unknown) {
+  layoutChanged() {
+    const layout = this.layout();
+    this.emit("change");
+    return layout;
+  }
+  assertLayoutWritable() {
     if (this.closing) throw new OfficeError("Office is shutting down.");
+    if (this.setupReservations.size)
+      throw new OfficeError(
+        "Wait for assistant setup to finish before editing the layout.",
+      );
+  }
+  saveLayout(input: unknown) {
+    this.assertLayoutWritable();
     this.layouts.save(input);
     const layout = this.layout();
     this.emit("change");
@@ -84,6 +107,34 @@ export class Office extends EventEmitter {
   private startups = new Set<Promise<void>>();
   private mutations = new Set<Promise<unknown>>();
   private pendingCreations = 0;
+  private setupReservations = new Map<string, SetupPlacement>();
+  private reserveSetup(placement?: SetupPlacement) {
+    if (placement) placement = setupPlacementSchema.parse(placement);
+    const used = [...this.agents.values()].map((agent) => agent.deskId);
+    used.push(
+      ...[...this.setupReservations.values()].map((value) => value.deskId),
+    );
+    const selected = placement ?? {
+      avatar: null,
+      deskId: this.layouts.availableDesk(used),
+    };
+    if (selected.deskId !== null) {
+      const desk = this.layouts
+        .snapshot()
+        .placements.find((p) => p.id === selected.deskId);
+      if (!desk || !completeWorkstation(desk))
+        throw new OfficeError(
+          "Choose an existing complete workstation or explicitly leave this assistant unassigned.",
+        );
+      if (used.includes(selected.deskId))
+        throw new OfficeError(
+          "This workstation is already assigned or reserved. Choose another workstation.",
+        );
+    }
+    const token = randomUUID();
+    this.setupReservations.set(token, structuredClone(selected));
+    return { token, placement: selected };
+  }
   private trackMutation<T>(work: Promise<T>): Promise<T> {
     this.mutations.add(work);
     return work.finally(() => this.mutations.delete(work));
@@ -99,8 +150,16 @@ export class Office extends EventEmitter {
   private async recoverPendingAdoptions() {
     for (const intent of this.store.adoptions()) {
       if (this.activeAdoptions.has(intent.profileHome)) continue;
+      let reservation: ReturnType<Office["reserveSetup"]> | undefined;
       try {
         if (!this.agents.has(intent.id)) {
+          if (this.agents.size + this.pendingCreations >= 8)
+            throw new OfficeError(
+              "This office cannot recover another agent right now.",
+            );
+          this.store.assertCanAddAgents(this.pendingCreations + 1);
+          reservation = this.reserveSetup(intent.placement);
+          this.pendingCreations++;
           const snapshot = (await this.factory.profile({
             action: "read",
             profileHome: intent.profileHome,
@@ -116,11 +175,17 @@ export class Office extends EventEmitter {
               profileName: snapshot.profileName,
             },
             snapshot.revision,
+            reservation.placement,
           );
         }
         this.store.finishAdoption(intent.profileHome);
       } catch {
         /* Keep the durable intent visible for explicit inspection/retry. */
+      } finally {
+        if (reservation) {
+          this.pendingCreations--;
+          this.setupReservations.delete(reservation.token);
+        }
       }
     }
   }
@@ -232,16 +297,26 @@ export class Office extends EventEmitter {
     workspace: string,
     model: ModelId = "glm-5.3-flash",
     defaults?: ProfileDefaults,
+    placement?: SetupPlacement,
   ) {
     if (this.agents.size + this.pendingCreations >= 8)
       throw new OfficeError(
         "This beta supports up to eight configured agents.",
       );
+    this.store.assertCanAddAgents(this.pendingCreations + 1);
+    const reservation = this.reserveSetup(placement);
     this.pendingCreations++;
     return this.trackMutation(
-      this.createAgent(name, workspace, model, defaults).finally(
-        () => this.pendingCreations--,
-      ),
+      this.createAgent(
+        name,
+        workspace,
+        model,
+        defaults,
+        reservation.placement,
+      ).finally(() => {
+        this.pendingCreations--;
+        this.setupReservations.delete(reservation.token);
+      }),
     );
   }
   private async createAgent(
@@ -249,6 +324,7 @@ export class Office extends EventEmitter {
     workspace: string,
     model: ModelId = "glm-5.3-flash",
     defaults?: ProfileDefaults,
+    placement?: SetupPlacement,
   ) {
     if (this.closing) throw new OfficeError("Office is shutting down.");
     if (this.agents.size >= 8)
@@ -258,7 +334,19 @@ export class Office extends EventEmitter {
     const id = randomUUID();
     if (defaults) settingsSchema.parse({ ...defaults, model, workspace });
     const profile = await this.factory.prepare(id, workspace, model, defaults);
-    return this.registerAgent(id, name, workspace, model, profile);
+    const snapshot = (await this.factory.profile({
+      action: "read",
+      profileHome: profile.profileHome,
+    })) as ProfileSnapshot;
+    return this.registerAgent(
+      id,
+      name,
+      workspace,
+      model,
+      profile,
+      snapshot.revision,
+      placement,
+    );
   }
   private registerAgent(
     id: string,
@@ -267,6 +355,7 @@ export class Office extends EventEmitter {
     model: ModelId,
     profile: { profileHome: string; profileName: string },
     configRevision?: string,
+    placement?: SetupPlacement,
   ) {
     const agent: OfficeAgent = {
       id,
@@ -277,10 +366,13 @@ export class Office extends EventEmitter {
       configRevision,
       settingsVersion: 0,
       configHistory: [],
-      avatarId: "unassigned",
-      deskId: this.layouts.availableDesk(
-        [...this.agents.values()].map((agent) => agent.deskId),
-      ),
+      avatar: placement?.avatar,
+      avatarId: placement?.avatar?.assetId ?? "unassigned",
+      deskId: placement
+        ? placement.deskId
+        : this.layouts.availableDesk(
+            [...this.agents.values()].map((agent) => agent.deskId),
+          ),
       lifecycle: "stopped",
       work: "idle",
       freshness: "current",
@@ -397,11 +489,14 @@ export class Office extends EventEmitter {
     expectedRevision: string,
     values: ProfileSettings,
     acknowledgeOwnership: boolean,
+    placement?: SetupPlacement,
   ) {
     if (this.agents.size + this.pendingCreations >= 8)
       throw new OfficeError(
         "This beta supports up to eight configured agents.",
       );
+    this.store.assertCanAddAgents(this.pendingCreations + 1);
+    const reservation = this.reserveSetup(placement);
     this.pendingCreations++;
     return this.trackMutation(
       this.adoptProfile(
@@ -410,7 +505,11 @@ export class Office extends EventEmitter {
         expectedRevision,
         values,
         acknowledgeOwnership,
-      ).finally(() => this.pendingCreations--),
+        reservation.placement,
+      ).finally(() => {
+        this.pendingCreations--;
+        this.setupReservations.delete(reservation.token);
+      }),
     );
   }
   private async adoptProfile(
@@ -419,6 +518,7 @@ export class Office extends EventEmitter {
     expectedRevision: string,
     values: ProfileSettings,
     acknowledgeOwnership: boolean,
+    placement?: SetupPlacement,
   ) {
     if (this.closing || this.agents.size >= 8)
       throw new OfficeError("This office cannot add another agent right now.");
@@ -456,6 +556,7 @@ export class Office extends EventEmitter {
         profileHome,
         model: values.model,
         workspace: values.workspace,
+        placement,
       });
       const result = (await this.factory.profile({
         action: "adopt",
@@ -477,6 +578,7 @@ export class Office extends EventEmitter {
           profileName: snapshot.profileName,
         },
         snapshot.revision,
+        placement,
       );
       this.store.finishAdoption(profileHome);
       this.emit("change");

@@ -12,7 +12,11 @@ import { attention, presentAgent } from "../shared/office";
 import { command, connectOffice } from "./api";
 import { Activity } from "./Activity";
 import { OfficeOverview } from "./OfficeOverview";
+import { LayoutTransfer } from "./scene/LayoutTransfer";
 import { Chat } from "./Chat";
+import { NewAssignmentFields } from "./newAssignmentFields";
+import { completeWorkstation } from "../shared/layout";
+import type { SetupPlacement } from "../shared/setup";
 import { SettingsDialog } from "./SettingsDialog";
 
 const OfficeScene = lazy(() =>
@@ -40,6 +44,11 @@ export function App() {
   }, [activity]);
   const [overview, setOverview] = useState(false);
   const [locate, setLocate] = useState<{ deskId: string; token: number }>();
+  const [setupGeneration, setSetupGeneration] = useState(0);
+  const [placement, setPlacement] = useState<SetupPlacement>({
+    avatar: null,
+    deskId: null,
+  });
   const [creating, setCreating] = useState(false);
   const [adoptionPath, setAdoptionPath] = useState("");
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
@@ -83,6 +92,18 @@ export function App() {
     localStorage.setItem("blueoffice.selected.v1", id);
     setError("");
   };
+  const openSetup = () => {
+    setSetupGeneration((value) => value + 1);
+    const occupied = new Set(Object.values(snapshot.layout?.assignments ?? {}));
+    setPlacement({
+      avatar: null,
+      deskId:
+        snapshot.layout?.placements.find(
+          (desk) => completeWorkstation(desk) && !occupied.has(desk.id),
+        )?.id ?? null,
+    });
+    dialog.current?.showModal();
+  };
   const add = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setCreating(true);
@@ -97,10 +118,12 @@ export function App() {
         soul: data.get("soul") ?? "",
         toolsets: data.getAll("toolsets"),
         approvalMode: data.get("approvalMode"),
+        placement,
       })) as { id: string };
       select(result.id);
       dialog.current?.close();
       form.reset();
+      setPlacement({ avatar: null, deskId: null });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -166,7 +189,7 @@ export function App() {
               disabled={!connected}
               onClick={() => {
                 setError("");
-                dialog.current?.showModal();
+                openSetup();
               }}
             >
               +
@@ -207,7 +230,7 @@ export function App() {
             <button
               className="primary first-agent"
               disabled={!connected}
-              onClick={() => dialog.current?.showModal()}
+              onClick={openSetup}
             >
               Add your first agent
             </button>
@@ -272,6 +295,14 @@ export function App() {
               </button>
             </div>
           ))}
+          <LayoutTransfer
+            agents={agents}
+            connected={connected}
+            layout={snapshot.layout}
+            saved={(layout) =>
+              setSnapshot((current) => ({ ...current, layout }))
+            }
+          />
           <Suspense
             fallback={
               <div className="scene-loading">
@@ -402,6 +433,7 @@ export function App() {
           key={settingsFor}
           agent={agents.find((a) => a.id === settingsFor)}
           routes={snapshot.routes}
+          layout={snapshot.layout}
           close={() => setSettingsFor(null)}
           adopted={select}
           initialPath={adoptionPath}
@@ -528,10 +560,12 @@ export function App() {
               <option value="off">Run without permission prompts</option>
             </select>
           </label>
-          <p className="form-note">
-            Choose an existing folder. Use Characters in the office to assign a
-            reviewed character after creating the assistant.
-          </p>
+          <NewAssignmentFields
+            key={setupGeneration}
+            layout={snapshot.layout}
+            value={placement}
+            onChange={setPlacement}
+          />
           {error ? (
             <p role="alert" className="inline-error">
               {error}

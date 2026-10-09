@@ -138,7 +138,7 @@ async function ui() {
     "browser",
     "npx",
     ["--no-install", "playwright", "test", ...uiArgs],
-    240_000,
+    600_000,
   );
   report.browser = validateBrowserReport(
     JSON.parse(await readFile(resolve(output, "playwright.json"), "utf8")),
