@@ -29,9 +29,16 @@ if (!manifestPath)
     "--manifest requires a locally reviewed private intended asset manifest; no GLB bytes enter Git.",
   );
 const hardware = !process.argv.includes("--software");
+const functionalOnly = process.argv.includes("--functional-only");
 const sampleSeconds = Number(option("--seconds", "10"));
-if (!Number.isFinite(sampleSeconds) || sampleSeconds < 3 || sampleSeconds > 30)
-  throw new Error("Use 3–30-second measurements.");
+if (
+  !Number.isFinite(sampleSeconds) ||
+  sampleSeconds < (functionalOnly ? 1 : 3) ||
+  sampleSeconds > 30
+)
+  throw new Error(
+    "Use 3–30-second measurements, or 1–30 seconds with --functional-only.",
+  );
 await mkdir(output, { recursive: true });
 const data = await mkdtemp(join(tmpdir(), "blueoffice-performance-"));
 const store = new OfficeStore(join(data, "office.db"));
@@ -73,7 +80,8 @@ let benchmarkPage;
 const report = {
   source: await sourceIdentity(),
   passed: false,
-  hardwareClaim: hardware,
+  hardwareClaim: hardware && !functionalOnly,
+  functionalOnly,
   viewport: { width: 1440, height: 900 },
   sampleSeconds,
   phases: [],
@@ -222,6 +230,14 @@ try {
     )
       throw new Error(`Measured viewport is invalid: ${JSON.stringify(facts)}`);
     return facts;
+  }
+  async function captureViewport(path) {
+    const capture = await metricsSession.send("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: false,
+    });
+    await writeFile(path, Buffer.from(capture.data, "base64"));
   }
   await applyViewport();
   benchmarkPage = page;
@@ -465,11 +481,8 @@ try {
       summary.actualSceneFps !== null &&
       summary.actualSceneFps >= summary.targetFps;
     report.phases.push(summary);
-    await page.screenshot({
-      path: join(output, `${phase}-${quality}.png`),
-      scale: "css",
-    });
-    await applyViewport();
+    await captureViewport(join(output, `${phase}-${quality}.png`));
+    summary.viewportAfterCapture = await viewportFacts();
     console.log(
       JSON.stringify({
         quality,
@@ -845,9 +858,7 @@ try {
     visibleAttention: await page.locator("[data-scene-request]").count(),
     selectedChat: await page.locator(".chat-panel").count(),
   };
-  await page.screenshot({
-    path: join(output, "context-loss-dense-attention.png"),
-  });
+  await captureViewport(join(output, "context-loss-dense-attention.png"));
   const remainingBefore = office
     .snapshot()
     .agents.slice(1)
@@ -889,7 +900,9 @@ try {
       (agent) => agent.finalComplete && agent.streamChunksRetained,
     );
   report.performanceTargetsMet =
-    !report.gpuTimingEnabled && report.phases.every((phase) => phase.targetMet);
+    !report.functionalOnly &&
+    !report.gpuTimingEnabled &&
+    report.phases.every((phase) => phase.targetMet);
   report.limits = [
     "Fixture browser runtime; native CPU/RSS measured separately. Instrumented browser RAF is compositor cadence, with actual scene capture retained separately.",
     "Mean FPS targets are provisional; raw frame tails/long tasks are preserved. No live-provider performance or dedicated GPU memory claim.",
