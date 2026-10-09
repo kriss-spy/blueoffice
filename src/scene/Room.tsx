@@ -123,6 +123,7 @@ export function Workstation({
   onSelect,
   components,
   highlighted = false,
+  decorative = true,
 }: {
   position: Point;
   rotation: QuarterTurn;
@@ -130,6 +131,7 @@ export function Workstation({
   onSelect: () => void;
   components?: LayoutPlacement["components"];
   highlighted?: boolean;
+  decorative?: boolean;
 }) {
   return (
     <group
@@ -199,17 +201,18 @@ export function Workstation({
             size={[0.53, 0.025, 0.2]}
             color={palette.frame}
           />
-          {[0, 1, 2].map((row) => (
-            <Box
-              key={row}
-              position={[0, 0.668, 0.33 + row * 0.045]}
-              size={[0.46, 0.008, 0.018]}
-              color={palette.white}
-            />
-          ))}
+          {decorative &&
+            [0, 1, 2].map((row) => (
+              <Box
+                key={row}
+                position={[0, 0.668, 0.33 + row * 0.045]}
+                size={[0.46, 0.008, 0.018]}
+                color={palette.white}
+              />
+            ))}
         </>
       )}
-      {components?.desk !== false && (
+      {decorative && components?.desk !== false && (
         <>
           <Box
             position={[0.41, 0.635, 0.38]}
@@ -269,7 +272,7 @@ export function Workstation({
     </group>
   );
 }
-export function Room() {
+export function Room({ decorative = true }: { decorative?: boolean }) {
   return (
     <group>
       <Box position={[0, -0.19, 0]} size={[10, 0.34, 8]} color="#c8d7e0" />
@@ -278,14 +281,15 @@ export function Room() {
         size={[9.9, 0.055, 7.9]}
         color={palette.wood}
       />
-      {Array.from({ length: 20 }, (_, i) => (
-        <Box
-          key={i}
-          position={[-4.7 + i * 0.5, 0.001, 0]}
-          size={[0.016, 0.007, 7.85]}
-          color="#c6a782"
-        />
-      ))}
+      {decorative &&
+        Array.from({ length: 20 }, (_, i) => (
+          <Box
+            key={i}
+            position={[-4.7 + i * 0.5, 0.001, 0]}
+            size={[0.016, 0.007, 7.85]}
+            color="#c6a782"
+          />
+        ))}
       <Box
         position={[0, 1.24, -4]}
         size={[10, 0.2 + 2.3, 0.14]}
@@ -388,15 +392,16 @@ export function Room() {
           height={0.12}
           color={palette.white}
         />
-        {[0.45, 0.73, 1.01].map((x) => (
-          <Cylinder
-            key={x}
-            position={[x, 1.18, 0.15]}
-            radius={0.073}
-            height={0.14}
-            color={palette.white}
-          />
-        ))}
+        {decorative &&
+          [0.45, 0.73, 1.01].map((x) => (
+            <Cylinder
+              key={x}
+              position={[x, 1.18, 0.15]}
+              radius={0.073}
+              height={0.14}
+              color={palette.white}
+            />
+          ))}
         <Plant position={[1.6, 1.13, -0.1]} scale={0.4} />
         {[-1.3, 0, 1.3].map((x) => (
           <group key={x} position={[x, 0, 1.05]}>

@@ -316,12 +316,24 @@ export function layoutInventory(draft: LayoutDraft) {
     (sum, count) => sum + count,
     0,
   );
-  const roomFurniture = { cafeCounters: 1, barStools: 3, floorPlants: 2 };
+  const roomFurniture = {
+    cafeCounters: 1,
+    barStools: 3,
+    floorPlants: 2,
+    espressoMachines: 1,
+    tabletopPlants: 1,
+  };
   return {
     assemblies: draft.placements.length,
     components,
     componentCount,
     roomFurniture,
-    furnitureCount: componentCount + 6,
+    roomFurnitureCount: Object.values(roomFurniture).reduce(
+      (sum, count) => sum + count,
+      0,
+    ),
+    furnitureCount:
+      componentCount +
+      Object.values(roomFurniture).reduce((sum, count) => sum + count, 0),
   };
 }

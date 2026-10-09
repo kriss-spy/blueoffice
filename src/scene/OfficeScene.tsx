@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ScenePerformance, useSceneQuality } from "./ScenePerformance";
+import { parseSceneQuality } from "../../shared/scene-quality";
 import { Canvas } from "@react-three/fiber";
 import { PCFShadowMap } from "three";
 import { presentAgent, type OfficeAgent } from "../../shared/office";
@@ -7,7 +9,12 @@ import {
   updateCompletionCues,
   type CompletionCues,
 } from "../../shared/presentation";
-import { workstation, worldAnchor, type Point } from "../../shared/scene";
+import {
+  roomFurnitureItems,
+  workstation,
+  worldAnchor,
+  type Point,
+} from "../../shared/scene";
 import { seatedPlacement } from "../../shared/seating";
 import { assetKey } from "../../shared/assets";
 import { useCharacters } from "./characters";
@@ -69,6 +76,7 @@ export function OfficeScene({
   onLayoutSaved?: (layout: LayoutSnapshot) => void;
   locate?: { deskId: string; token: number };
 }) {
+  const { quality, setQuality, policy } = useSceneQuality();
   const [sceneFailure, setSceneFailure] = useState<
     "initialization" | "context-loss"
   >();
@@ -404,6 +412,19 @@ export function OfficeScene({
       </div>
       <div className="scene-dom-controls">
         <label>
+          Scene quality{" "}
+          <select
+            aria-label="Scene quality"
+            value={quality}
+            onChange={(event) =>
+              setQuality(parseSceneQuality(event.target.value))
+            }
+          >
+            <option value="ordinary">Ordinary</option>
+            <option value="reduced">Reduced · fewer decorative details</option>
+          </select>
+        </label>
+        <label>
           Assistant{" "}
           <select
             aria-label="Select office assistant"
@@ -481,22 +502,24 @@ export function OfficeScene({
               onCreated={() => setSceneReady(true)}
               orthographic
               camera={{ position: [10, 10, 13], zoom: 40, near: 0.1, far: 100 }}
-              shadows={{ type: PCFShadowMap }}
-              dpr={[1, 1.5]}
+              shadows={policy.shadows ? { type: PCFShadowMap } : false}
+              dpr={policy.dpr}
               fallback={
                 <SceneError reason="initialization" retry={retryScene} />
               }
             >
+              <ScenePerformance quality={quality} />
               <SceneContextEvents onLost={lostContext} />
               <OfficeLighting />
               <Camera command={command} metrics={liveMetrics} />
-              <Room />
+              <Room decorative={policy.decorative} />
               {visibleDesks.map((desk) => (
                 <Workstation
                   key={desk.id}
                   position={desk.position}
                   rotation={desk.rotation}
                   components={desk.components}
+                  decorative={policy.decorative}
                   highlighted={selectedDesk === desk.id}
                   anchors={!!editing}
                   onSelect={() => {
@@ -704,6 +727,7 @@ export function OfficeScene({
         hidden
         data-office-scene={JSON.stringify({
           scene: {
+            quality,
             ready: sceneReady,
             failure: sceneFailure ?? null,
             generation: sceneGeneration,
@@ -769,8 +793,8 @@ export function OfficeScene({
       <details className="layout-inventory">
         <summary>
           Furniture inventory · {visibleLayout.placements.length} workstations ·{" "}
-          {layoutInventory(visibleLayout).componentCount} components + 6 room
-          furniture
+          {layoutInventory(visibleLayout).componentCount} components +{" "}
+          {layoutInventory(visibleLayout).roomFurnitureCount} room furniture
         </summary>
         <ul>
           {visibleLayout.placements.map((p) => (
@@ -785,6 +809,23 @@ export function OfficeScene({
               <button
                 aria-label={`Locate ${p.id}`}
                 onClick={() => locateDesk(p.id)}
+              >
+                Locate
+              </button>
+            </li>
+          ))}
+          {roomFurnitureItems.map((item) => (
+            <li key={item.name}>
+              <span>{item.name}</span>
+              <button
+                aria-label={`Locate ${item.name}`}
+                onClick={() =>
+                  setCommand((c) => ({
+                    action: "locate",
+                    target: item.position,
+                    id: c.id + 1,
+                  }))
+                }
               >
                 Locate
               </button>

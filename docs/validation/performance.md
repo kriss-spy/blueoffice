@@ -1,0 +1,41 @@
+# Dense office performance (#17)
+
+The benchmark uses eight independently owned fixture RPC children and eight clones of the private reviewed Yuuka seated pack. The native resource probe separately uses actual installed Hermes with fresh owned profiles in a bubblewrap namespace and a local synthetic provider. Neither benchmark reads working profiles, credentials or conversation data, or makes live provider calls.
+
+## Reproduce
+
+Run the normal check/UI gates first, then leave the host quiet. Build once before the browser measurement; do not run a build or another browser/CPU acceptance gate during measurements.
+
+```sh
+npm run check
+npm run verify:ui
+node --import tsx scripts/performance-browser.mjs --manifest /absolute/private/seating/manifest.json --output artifacts/performance/acceptance-browser --seconds 10
+python3 scripts/performance-native.py --output artifacts/performance/acceptance-native --seconds 5
+node --import tsx scripts/performance-browser.mjs --manifest /absolute/private/seating/manifest.json --output artifacts/performance/acceptance-gpu --seconds 5 --gpu-timing
+```
+
+The private manifest identifies `yuuka.original@525ae0fa-seated-work-v1`, with GLB SHA-256 `1a0a7918e45260b43bf9f5920aa98ff29fabed523854d70171443758b09186ae`. The file is private and ignored; this benchmark does not authorize its distribution. Import uses the existing registry and complete local review. The report preserves the exact manifest, renderer, browser version/flags, Linux, CPU/memory, Hermes revision, source identity, raw frame samples, clock calibration, process samples and screenshots. Reports under `artifacts/` remain local evidence. A failed report is not acceptance, and source changes invalidate its fingerprint.
+
+Named hardware is TB39, Intel Core Ultra 9 185H, 22 logical CPU IDs (20 online when checked), approximately 32 GB unified RAM, Fedora 44 KDE, Mesa Intel Arc MTL 26.1.8. The actual accelerated WebGL renderer must be recorded, rather than inferred from GLX. `--software` is functional harness evidence only; SwiftShader cannot establish hardware budgets.
+
+## Workload and budget interpretation
+
+The unchanged default room contains 40 functional furniture/equipment items: eight desks, eight chairs, eight computers, eight keyboards, one café counter, three stools, two floor plants, one espresso machine and one tabletop plant. Walls, windows, floor seams, decorative cups and machine submeshes do not inflate that count. Both quality modes retain all 40 items.
+
+At an emulated viewport of 1440 × 900, chat remains open. The harness records actual R3F rendered frame cadence separately from browser RAF cadence for ordinary/reduced ready idle and working seated poses, plus dense attention. The provisional comparison is mean actual rendered FPS ≥60 ordinary and ≥30 reduced. Frame p95/p99, long tasks and input-to-frame samples remain visible in raw results; meeting a mean target does not promise a maximum latency. The authoritative measured values are each report's `phases`, `performanceTargetsMet`, `loadMs`, `streaming`, `attentionP95Ms`, `hiddenTab`, and `reconnect` fields. Unmet comparisons are explicit release limitations.
+
+GPU timer queries use `--gpu-timing` in a separate profiling run. Querying the driver perturbed observed throughput during harness development, so those runs deliberately cannot claim frame-budget acceptance. Timer results are actual elapsed GPU queries, with disjoint results rejected. Renderer draw calls, triangles and geometry/texture counts supplement frame samples; they are not dedicated GPU memory measurements.
+
+The native probe measures ready idle and structured pending-input states at 1/4/8 owned Hermes runtimes. CPU uses `/proc` cumulative own and waited-child ticks, reported as percent of one core; RSS sums owned processes and can double-count shared pages. All raw PIDs, start ticks, samples and supervisor values are retained. The modest synthetic workload does not estimate real model/tool costs or an active expensive task's peak resources.
+
+## Quality, visibility and streaming
+
+Reduced mode persists locally, caps DPR at 1, disables shadows, and removes decorative floor seams, keyboard detail, mice/cups and café cups. Ordinary DPR caps at 1.5. Independent skeleton clones/mixers and disposal remain intact. Expensive precise animated bounds are available only with `?scene-debug`; ordinary diagnostics explicitly omit the box instead of reporting stale bounds. Bone/geometry identity is cached per clone and pose signatures sampled at bounded cadence.
+
+Hidden documents set the Canvas frame loop to `never`, while the office connection and truthful request state remain active. Hardware visibility is tested by switching a real tab in a fresh owned Chrome default context, attached with CDP `noDefaults`; Playwright-created contexts force visibility and cannot establish this measurement. Returning to the tab resumes rendering. The harness checks zero additional rendered frames while hidden and exact pending identities preserved.
+
+Streaming exercises eight concurrent public streams through the normal SSE batching path, compares journal revisions with received batches, verifies every synthetic chunk and final completion remains, and verifies geometry identity does not change. It also retains input-to-frame samples. Existing runtime tests cover exact request/error/lifecycle retention; the dense benchmark cycles questions and denied permissions and preserves independent requests across reconnect and context loss. It does not infer retention from batch counts alone.
+
+Pending latency starts at benchmark-only `RpcChild.ingest` receipt of the raw structured clarify/approval frame, before office normalization, and ends at a genuinely visible exact marker. The marker must intersect the viewport and survive ancestor clipping. Fifteen bounded round-trip clock samples calibrate Node/browser monotonic epochs; the best half-RTT uncertainty is preserved and added to p95 for the <500 ms comparison. Provider latency is excluded. Healthy reconnect measures from restored network availability to connected state with eight exact pending markers, compared with <3 seconds. WebGL loss retains chat and the dense DOM request queue; answering one request must retain the other seven.
+
+These measurements require review of the actual reports and captures. Earlier failed harness attempts remain available and cannot establish acceptance. Parent integration must rerun combined mechanical/browser gates and review whether the measurement fingerprint applies to its final tree. No shared runtime owner or live routing admission is introduced.
