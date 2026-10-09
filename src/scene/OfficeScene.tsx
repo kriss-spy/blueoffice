@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ScenePerformance, useSceneQuality } from "./ScenePerformance";
 import { parseSceneQuality } from "../../shared/scene-quality";
 import { Canvas } from "@react-three/fiber";
@@ -43,6 +49,8 @@ import { SceneSound } from "./scene-sound";
 import { DOMAttentionQueue } from "./DOMAttentionQueue";
 import { SceneError } from "./SceneError";
 import { Room, Workstation } from "./Room";
+import { GameWindow } from "../GameWindow";
+import { GameIcon } from "../GameIcon";
 import "./scene.css";
 import "./office-scene.css";
 
@@ -66,7 +74,13 @@ export function OfficeScene({
   layout: suppliedLayout,
   onLayoutSaved,
   locate,
+  settingsOpen = false,
+  closeSettings = () => {},
+  transfer,
 }: {
+  settingsOpen?: boolean;
+  closeSettings?: () => void;
+  transfer?: ReactNode;
   agents: OfficeAgent[];
   connected: boolean;
   selected?: string;
@@ -386,15 +400,7 @@ export function OfficeScene({
   }, [locate, savedLayout]);
   return (
     <section className="live-scene" aria-label="Live office">
-      <div className="live-scene-heading">
-        <div>
-          <h2>Your office</h2>
-          <p>
-            {agents.length
-              ? "Choose an assistant or a desk to open its conversation."
-              : "Add an assistant to bring the office to life."}
-          </p>
-        </div>
+      <div className="scene-tools">
         <button
           disabled={!connected || !savedLayout || !!editing}
           onClick={() => {
@@ -403,87 +409,23 @@ export function OfficeScene({
               setDraft(structuredClone(savedLayout));
             }
           }}
+          className="hud-button"
+          aria-label="Edit office"
+          title="Edit office"
         >
-          Edit office
+          <GameIcon name="furniture" />
+          <span>Furnish</span>
         </button>
-        <button disabled={!connected} onClick={() => setLibraryOpen(true)}>
-          Characters
+        <button
+          className="hud-button"
+          aria-label="Characters"
+          title="Characters"
+          disabled={!connected}
+          onClick={() => setLibraryOpen(true)}
+        >
+          <GameIcon name="character" />
+          <span>Characters</span>
         </button>
-      </div>
-      <div className="scene-dom-controls">
-        <label>
-          Scene quality{" "}
-          <select
-            aria-label="Scene quality"
-            value={quality}
-            onChange={(event) =>
-              setQuality(parseSceneQuality(event.target.value))
-            }
-          >
-            <option value="ordinary">Ordinary</option>
-            <option value="reduced">Reduced · fewer decorative details</option>
-          </select>
-        </label>
-        <label>
-          Assistant{" "}
-          <select
-            aria-label="Select office assistant"
-            value={
-              selected && agents.some((a) => a.id === selected)
-                ? selected
-                : (agents[0]?.id ?? "")
-            }
-            onChange={(e) => select(e.target.value)}
-            disabled={!agents.length}
-          >
-            {!agents.length && <option value="">No assistants yet</option>}
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name} · {presentAgent(agent, connected).label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={lounge}
-            onChange={(e) => setLounge(e.target.checked)}
-          />{" "}
-          Lounge idle assistants
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={soundOn}
-            onChange={async (e) => {
-              const enabled = e.target.checked;
-              if (!enabled) {
-                setSoundOn(false);
-                return;
-              }
-              try {
-                await sound.current.enable();
-                setSoundOn(true);
-                setSoundError("");
-              } catch {
-                setSoundOn(false);
-                setSoundError(
-                  "Sound could not start; visual attention remains available.",
-                );
-              }
-            }}
-          />{" "}
-          Quiet notification sound
-        </label>
-        {soundError && <span role="status">{soundError}</span>}
-        <span>
-          {reducedMotion
-            ? "Reduced motion · all status and request controls remain available"
-            : hidden
-              ? "Decorative motion paused while hidden"
-              : ""}
-        </span>
       </div>
       <div className="live-room">
         {sceneFailure ? (
@@ -602,14 +544,20 @@ export function OfficeScene({
               <Labels
                 markers={markers}
                 anchors={[
-                  ...occupants.map(({ position, asset, desk }) =>
-                    worldAnchor(
-                      asset?.anchors?.nameplate ?? [0, 1.85, 0],
-                      position,
-                      desk?.rotation ?? 0,
-                    ),
+                  ...occupants.map(
+                    ({ position, asset, desk, seated, seating }) => {
+                      const anchor = asset?.anchors?.nameplate ?? [0, 1.85, 0];
+                      const seat = seated
+                        ? seatedPlacement(asset?.seating, seating)
+                        : undefined;
+                      const offset = seat?.compatible ? seat.offset : [0, 0, 0];
+                      return worldAnchor(
+                        anchor.map((n, i) => n + offset[i]) as Point,
+                        position,
+                        desk?.rotation ?? 0,
+                      );
+                    },
                   ),
-                  [-2.2, 2, -2.8],
                 ]}
                 metrics={liveMetrics}
                 onMetrics={setMetrics}
@@ -621,7 +569,6 @@ export function OfficeScene({
                         ? 1
                         : 0,
                   ),
-                  -1,
                 ]}
               />
             </Canvas>
@@ -636,6 +583,7 @@ export function OfficeScene({
                     markers.current[i] = el;
                   }}
                   data-scene-agent={agent.id}
+                  title={`${agent.name} · ${view.label}`}
                   className={`scene-marker live-marker ${selected === agent.id ? "selected" : ""} tone-${view.tone}`}
                   aria-label={`Select ${agent.name}: ${view.label}`}
                   onClick={() =>
@@ -650,7 +598,7 @@ export function OfficeScene({
                       <sup>{view.requests.length}</sup>
                     ) : null}
                   </b>
-                  <span>
+                  <span className="marker-caption">
                     <strong>{agent.name}</strong>
                     <small>{view.label}</small>
                     {view.detail && <small>{view.detail}</small>}
@@ -675,15 +623,6 @@ export function OfficeScene({
               </div>
             ),
           )}
-          <button
-            ref={(el) => {
-              markers.current[occupants.length] = el;
-            }}
-            className="cafe-marker"
-            tabIndex={-1}
-          >
-            Coffee corner
-          </button>
         </div>
       </div>
       <div className="live-scene-bottom">
@@ -700,29 +639,167 @@ export function OfficeScene({
           <button aria-label="Pan right" onClick={() => camera("right")}>
             →
           </button>
-          <button onClick={() => camera("reset")}>Reset view</button>
+          <button
+            aria-label="Reset view"
+            title="Reset view"
+            onClick={() => camera("reset")}
+          >
+            <GameIcon name="home" />
+          </button>
         </nav>
-        <span role="status">
-          {selectedCharacter?.diagnostic
-            ? `${selectedCharacter.agent.name}: ${selectedCharacter.diagnostic}`
-            : selectedCharacter?.motionReason &&
-                !selectedCharacter.view.pauseMotion &&
-                !hidden &&
-                !reducedMotion &&
-                !selectedCharacter.view.canCelebrate
-              ? `${selectedCharacter.agent.name}: ${selectedCharacter.motionReason} Staying at a safe position.`
-              : occupants.some((o) => o.asset)
-                ? occupants.some((o) => o.seated)
-                  ? "Compatible characters seated at work"
-                  : "Saved character assignments · standing pose"
-                : "Character placeholders shown"}
-        </span>
       </div>
-      <DOMAttentionQueue
-        agents={agents}
-        connected={connected}
-        focusRequest={focusRequest}
-      />
+      {settingsOpen && (
+        <GameWindow
+          title="Office settings"
+          close={closeSettings}
+          className="room-settings-window"
+        >
+          <div className="scene-dom-controls">
+            <label>
+              Scene quality{" "}
+              <select
+                aria-label="Scene quality"
+                value={quality}
+                onChange={(event) =>
+                  setQuality(parseSceneQuality(event.target.value))
+                }
+              >
+                <option value="ordinary">Ordinary</option>
+                <option value="reduced">
+                  Reduced · fewer decorative details
+                </option>
+              </select>
+            </label>
+            <label>
+              Assistant{" "}
+              <select
+                aria-label="Select office assistant"
+                value={
+                  selected && agents.some((a) => a.id === selected)
+                    ? selected
+                    : (agents[0]?.id ?? "")
+                }
+                onChange={(e) => select(e.target.value)}
+                disabled={!agents.length}
+              >
+                {!agents.length && <option value="">No assistants yet</option>}
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name} · {presentAgent(agent, connected).label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={lounge}
+                onChange={(e) => setLounge(e.target.checked)}
+              />{" "}
+              Lounge idle assistants
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={soundOn}
+                onChange={async (e) => {
+                  const enabled = e.target.checked;
+                  if (!enabled) {
+                    setSoundOn(false);
+                    return;
+                  }
+                  try {
+                    await sound.current.enable();
+                    setSoundOn(true);
+                    setSoundError("");
+                  } catch {
+                    setSoundOn(false);
+                    setSoundError(
+                      "Sound could not start; visual attention remains available.",
+                    );
+                  }
+                }}
+              />{" "}
+              Quiet notification sound
+            </label>
+            {soundError && <span role="status">{soundError}</span>}
+            <span>
+              {reducedMotion
+                ? "Reduced motion · all status and request controls remain available"
+                : hidden
+                  ? "Decorative motion paused while hidden"
+                  : ""}
+            </span>
+          </div>
+          {transfer}
+          <details className="layout-inventory">
+            <summary>
+              Furniture inventory · {visibleLayout.placements.length}{" "}
+              workstations · {layoutInventory(visibleLayout).componentCount}{" "}
+              components + {layoutInventory(visibleLayout).roomFurnitureCount}{" "}
+              room furniture
+            </summary>
+            <ul>
+              {visibleLayout.placements.map((p) => (
+                <li key={p.id} data-located={selectedDesk === p.id}>
+                  <span>
+                    {p.id} · {p.rotation * 90}° ·{" "}
+                    {completeWorkstation(p) ? "complete" : "incomplete"} ·{" "}
+                    {agents.find(
+                      (agent) => visibleLayout.assignments[agent.id] === p.id,
+                    )?.name ?? "Unassigned"}
+                  </span>
+                  <button
+                    aria-label={`Locate ${p.id}`}
+                    onClick={() => locateDesk(p.id)}
+                  >
+                    Locate
+                  </button>
+                </li>
+              ))}
+              {roomFurnitureItems.map((item) => (
+                <li key={item.name}>
+                  <span>{item.name}</span>
+                  <button
+                    aria-label={`Locate ${item.name}`}
+                    onClick={() =>
+                      setCommand((c) => ({
+                        action: "locate",
+                        target: item.position,
+                        id: c.id + 1,
+                      }))
+                    }
+                  >
+                    Locate
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+          <span role="status">
+            {selectedCharacter?.diagnostic
+              ? `${selectedCharacter.agent.name}: ${selectedCharacter.diagnostic}`
+              : selectedCharacter?.motionReason &&
+                  !selectedCharacter.view.pauseMotion &&
+                  !hidden &&
+                  !reducedMotion &&
+                  !selectedCharacter.view.canCelebrate
+                ? `${selectedCharacter.agent.name}: ${selectedCharacter.motionReason} Staying at a safe position.`
+                : occupants.some((o) => o.asset)
+                  ? occupants.some((o) => o.seated)
+                    ? "Compatible characters seated at work"
+                    : "Saved character assignments · standing pose"
+                  : "Character placeholders shown"}
+          </span>
+        </GameWindow>
+      )}
+      {sceneFailure && (
+        <DOMAttentionQueue
+          agents={agents}
+          connected={connected}
+          focusRequest={focusRequest}
+        />
+      )}
       <output
         hidden
         data-office-scene={JSON.stringify({
@@ -790,68 +867,34 @@ export function OfficeScene({
           to recover a valid room and safe assignment references.
         </p>
       )}
-      <details className="layout-inventory">
-        <summary>
-          Furniture inventory · {visibleLayout.placements.length} workstations ·{" "}
-          {layoutInventory(visibleLayout).componentCount} components +{" "}
-          {layoutInventory(visibleLayout).roomFurnitureCount} room furniture
-        </summary>
-        <ul>
-          {visibleLayout.placements.map((p) => (
-            <li key={p.id} data-located={selectedDesk === p.id}>
-              <span>
-                {p.id} · {p.rotation * 90}° ·{" "}
-                {completeWorkstation(p) ? "complete" : "incomplete"} ·{" "}
-                {agents.find(
-                  (agent) => visibleLayout.assignments[agent.id] === p.id,
-                )?.name ?? "Unassigned"}
-              </span>
-              <button
-                aria-label={`Locate ${p.id}`}
-                onClick={() => locateDesk(p.id)}
-              >
-                Locate
-              </button>
-            </li>
-          ))}
-          {roomFurnitureItems.map((item) => (
-            <li key={item.name}>
-              <span>{item.name}</span>
-              <button
-                aria-label={`Locate ${item.name}`}
-                onClick={() =>
-                  setCommand((c) => ({
-                    action: "locate",
-                    target: item.position,
-                    id: c.id + 1,
-                  }))
-                }
-              >
-                Locate
-              </button>
-            </li>
-          ))}
-        </ul>
-      </details>
       {editing && (
-        <LayoutEditor
-          snapshot={editing}
-          agents={agents}
-          selectedId={selectedDesk}
-          select={setSelectedDesk}
-          preview={setDraft}
-          connected={connected}
-          cancel={() => {
+        <GameWindow
+          title="Furnish office"
+          className="furniture-window"
+          close={() => {
             setEditing(undefined);
             setDraft(undefined);
           }}
-          saved={(value) => {
-            setSavedLayout(value);
-            onLayoutSaved?.(value);
-            setEditing(undefined);
-            setDraft(undefined);
-          }}
-        />
+        >
+          <LayoutEditor
+            snapshot={editing}
+            agents={agents}
+            selectedId={selectedDesk}
+            select={setSelectedDesk}
+            preview={setDraft}
+            connected={connected}
+            cancel={() => {
+              setEditing(undefined);
+              setDraft(undefined);
+            }}
+            saved={(value) => {
+              setSavedLayout(value);
+              onLayoutSaved?.(value);
+              setEditing(undefined);
+              setDraft(undefined);
+            }}
+          />
+        </GameWindow>
       )}
       {libraryOpen && (
         <CharacterLibrary

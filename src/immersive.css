@@ -1,0 +1,471 @@
+/* The room is the home screen. Controls and windows float above its canvas. */
+.immersive-office {
+  height: 100dvh;
+  overflow: hidden;
+  background: #dcecf2;
+}
+.immersive-office .workspace {
+  display: block;
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  min-height: 0;
+}
+.immersive-office .office-stage {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+.immersive-office .live-scene {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  background: #dcecf2;
+}
+.immersive-office .live-room {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+.office-hud {
+  position: fixed;
+  left: 24px;
+  top: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+}
+.office-logo {
+  width: 148px;
+  height: 60px;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+.office-presence {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.connection-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d08b35;
+  box-shadow: 0 0 0 3px #ffffffa8;
+  pointer-events: auto;
+}
+.connection-dot.online {
+  background: #62aa97;
+}
+.fixture-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #456678;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  pointer-events: auto;
+}
+.office-dock,
+.immersive-office .scene-tools {
+  position: fixed;
+  bottom: 24px;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+}
+.office-dock {
+  left: 24px;
+}
+.immersive-office .scene-tools {
+  left: 304px;
+}
+.immersive-office .hud-button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 55px;
+  padding: 10px;
+  border: 2px solid #ffffffe6;
+  border-radius: 5px 13px 5px 13px;
+  color: #365979;
+  background: linear-gradient(135deg, #ffffffed 55%, #d4eef8ed 55%);
+  box-shadow:
+    0 3px 0 #718c9c45,
+    0 5px 15px #28445412;
+  transition:
+    transform 150ms,
+    background 150ms;
+}
+.immersive-office .hud-button > svg {
+  width: 28px;
+  height: 28px;
+}
+.immersive-office .hud-button > span:not(.hud-badge) {
+  position: absolute;
+  bottom: 65px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #29485deb;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+.immersive-office .hud-button:hover,
+.immersive-office .hud-button:focus-visible {
+  transform: translateY(-3px);
+  background: #fff;
+}
+.immersive-office .hud-button:hover > span,
+.immersive-office .hud-button:focus-visible > span {
+  opacity: 1;
+}
+.hud-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: #f7cd69;
+  border: 2px solid white;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 6px;
+}
+.immersive-office .office-settings {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+}
+.immersive-office .hud-visibility {
+  position: fixed;
+  top: 24px;
+  right: 78px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+}
+.hud-hidden .office-hud,
+.hud-hidden .office-dock,
+.hud-hidden .office-settings,
+.hud-hidden .scene-tools,
+.hud-hidden .live-scene-bottom,
+.hud-hidden .scene-markers {
+  visibility: hidden;
+}
+.immersive-office .live-scene-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: 4;
+  padding: 0;
+}
+.immersive-office .live-scene-bottom nav {
+  padding: 4px;
+  border: 1px solid #fff;
+  border-radius: 7px;
+  background: #ffffffc9;
+  box-shadow: 0 3px 0 #718c9c35;
+  gap: 0;
+}
+.immersive-office .live-scene-bottom button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font-size: 19px;
+  width: 38px;
+  height: 38px;
+  padding: 5px;
+}
+.immersive-office .live-scene-bottom button:hover {
+  background: #cceaf2;
+}
+.immersive-office .live-marker {
+  width: 30px;
+  height: 30px;
+  min-width: 0;
+  padding: 0;
+  border: 2px solid white;
+  border-radius: 50% 50% 50% 2px;
+  justify-content: center;
+  background: #f4fbffff;
+  box-shadow: 0 2px 5px #264c7430;
+  overflow: visible;
+}
+.immersive-office .live-marker b {
+  margin: 0;
+  background: none;
+  font-size: 15px;
+  width: auto;
+  height: auto;
+  line-height: 20px;
+  padding: 0;
+}
+.immersive-office .live-marker.tone-ready,
+.immersive-office .live-marker.tone-stopped {
+  opacity: 0.25;
+  transform-origin: center;
+}
+.immersive-office .live-marker:hover,
+.immersive-office .live-marker:focus-visible,
+.immersive-office .live-marker.selected {
+  opacity: 1;
+  border-color: #fff;
+}
+.immersive-office .live-marker.tone-working {
+  background: #dff4fc;
+  color: #308fae;
+}
+.immersive-office .live-marker.tone-question,
+.immersive-office .live-marker.tone-approval {
+  background: #ffe6a5;
+  color: #79522d;
+}
+.immersive-office .live-marker .marker-caption {
+  display: none;
+  position: absolute;
+  top: 35px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fffffff5;
+  padding: 8px 12px;
+  border-radius: 5px;
+  min-width: 110px;
+  box-shadow: 0 3px 12px #24475e22;
+  pointer-events: none;
+}
+.immersive-office .live-marker:hover .marker-caption,
+.immersive-office .live-marker:focus-visible .marker-caption {
+  display: block;
+}
+.immersive-office .game-window {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+  padding: 0;
+  width: min(720px, calc(100vw - 32px));
+  max-width: none;
+  height: min(680px, calc(100dvh - 120px));
+  max-height: none;
+  border: 2px solid #f9fdff;
+  border-radius: 7px 18px 7px 18px;
+  background: #f4f9fcf7;
+  color: #244365;
+  box-shadow:
+    0 16px 65px #16395438,
+    0 3px 0 #7cbcd9;
+  z-index: 20;
+  overflow: hidden;
+}
+.game-window[open] {
+  display: flex;
+  flex-direction: column;
+}
+.game-window-title {
+  display: flex;
+  flex: 0 0 55px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 24px;
+  background: linear-gradient(110deg, #e2f4fb 0%, #ffffff 65%, #d8eef7 65%);
+  border-bottom: 1px solid #c7e0ec;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.game-window-title h2 {
+  font-size: 17px;
+  font-style: italic;
+  letter-spacing: 0.2px;
+  border-bottom: 3px solid #edcc70;
+  padding-bottom: 3px;
+}
+.game-window-title button {
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  display: flex;
+}
+.game-window-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px;
+}
+.immersive-office .conversation-window {
+  width: min(680px, calc(100vw - 32px));
+}
+.conversation-window .game-window-content {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+.immersive-office .office-conversation {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  border: 0;
+}
+.immersive-office .office-conversation > .chat {
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+}
+.immersive-office .agents-window {
+  width: min(440px, calc(100vw - 32px));
+  height: min(560px, calc(100dvh - 120px));
+}
+.agents-window .agent-row {
+  width: 100%;
+}
+.agents-window nav {
+  display: grid;
+  gap: 8px;
+}
+.immersive-office .scene-dom-controls {
+  display: grid;
+  padding: 0;
+  gap: 18px;
+}
+.room-settings-window .scene-dom-controls > span:empty {
+  display: none;
+}
+.room-settings-window .layout-inventory {
+  max-height: none;
+  margin-top: 20px;
+}
+.room-settings-window .layout-transfer {
+  margin-top: 24px;
+}
+.room-settings-window > .game-window-content > [role="status"] {
+  display: block;
+  font-size: 12px;
+  margin-top: 24px;
+}
+.immersive-office .error-banner {
+  position: relative;
+  z-index: 8;
+  margin: 90px auto 0;
+  max-width: 650px;
+}
+.immersive-office .layout-recovery {
+  position: absolute;
+  top: 85px;
+  left: 24px;
+  background: #fff6db;
+  padding: 10px;
+}
+.immersive-office .room-attention {
+  position: absolute;
+  top: 90px;
+  left: 24px;
+  z-index: 7;
+  background: #fffffff5;
+  padding: 16px;
+  border-radius: 8px;
+}
+.immersive-office dialog::backdrop {
+  background: #284d6542;
+  backdrop-filter: blur(2px);
+}
+@media (max-width: 760px) {
+  .office-hud {
+    left: 12px;
+    top: 12px;
+  }
+  .office-logo {
+    width: 112px;
+    height: 45px;
+  }
+  .office-dock {
+    left: 12px;
+    bottom: 16px;
+    gap: 4px;
+  }
+  .immersive-office .hud-button {
+    width: 43px;
+    height: 46px;
+    padding: 7px;
+  }
+  .immersive-office .scene-tools {
+    left: 200px;
+    bottom: 16px;
+    gap: 4px;
+  }
+  .immersive-office .live-scene-bottom {
+    right: 12px;
+    bottom: 76px;
+  }
+  .immersive-office .office-settings {
+    top: 16px;
+    right: 12px;
+  }
+  .immersive-office .hud-visibility {
+    top: 16px;
+    right: 62px;
+  }
+  .immersive-office .game-window {
+    height: min(680px, calc(100dvh - 32px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .immersive-office * {
+    transition: none !important;
+  }
+}
+.immersive-office .chat-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  border: 0;
+}
+.immersive-office .chat-header {
+  height: 68px;
+  padding: 10px 20px;
+}
+.immersive-office .chat-label {
+  display: none;
+}
+.immersive-office .transcript {
+  min-height: 60px;
+  padding: 18px;
+}
+.immersive-office .composer {
+  padding: 12px 18px;
+}
+.immersive-office .composer textarea {
+  min-height: 66px;
+}
+
+.hud-hidden .scene-markers {
+  display: none;
+}
+.office-hud {
+  mix-blend-mode: multiply;
+}
+.immersive-office .furniture-window {
+  width: min(1000px, calc(100vw - 32px));
+  height: min(780px, calc(100dvh - 64px));
+}
+.furniture-window .layout-editor {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}

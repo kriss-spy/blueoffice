@@ -4,7 +4,6 @@ import {
   useState,
   lazy,
   Suspense,
-  type CSSProperties,
   type FormEvent,
 } from "react";
 import type { Snapshot } from "../shared/office";
@@ -18,6 +17,9 @@ import { NewAssignmentFields } from "./newAssignmentFields";
 import { completeWorkstation } from "../shared/layout";
 import type { SetupPlacement } from "../shared/setup";
 import { SettingsDialog } from "./SettingsDialog";
+import { GameWindow } from "./GameWindow";
+import { GameIcon } from "./GameIcon";
+import "./immersive.css";
 
 const OfficeScene = lazy(() =>
   import("./scene/OfficeScene").then((module) => ({
@@ -57,37 +59,17 @@ export function App() {
   >();
   const [acting, setActing] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const [chatWidth, setChatWidth] = useState(() => {
-    const saved = Number(localStorage.getItem("blueoffice.chat-width.v1"));
-    return saved >= 320 && saved <= 560 ? saved : 380;
-  });
-  const workspace = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const resizeChat = (value: number) => {
-    const width = Math.max(
-      320,
-      Math.min(
-        560,
-        (workspace.current?.clientWidth ?? innerWidth) - 600,
-        value,
-      ),
-    );
-    setChatWidth(width);
-    try {
-      localStorage.setItem("blueoffice.chat-width.v1", String(width));
-    } catch {
-      /* Storage can be unavailable. */
-    }
-  };
-  useEffect(() => {
-    const resized = () => resizeChat(chatWidth);
-    window.addEventListener("resize", resized);
-    return () => window.removeEventListener("resize", resized);
-  }, [chatWidth]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [roomSettings, setRoomSettings] = useState(false);
+  const [hudHidden, setHudHidden] = useState(false);
   const agents = snapshot.agents;
   const agent = agents.find((a) => a.id === selected) ?? agents[0];
   useEffect(() => connectOffice(setSnapshot, setConnected, setError), []);
   const select = (id: string) => {
+    setChatOpen(true);
+    setRosterOpen(false);
+    setRoomSettings(false);
     setSelected(id);
     localStorage.setItem("blueoffice.selected.v1", id);
     setError("");
@@ -142,7 +124,6 @@ export function App() {
       setActing(false);
     }
   };
-  const running = agents.filter((a) => a.lifecycle === "ready").length;
   const conversation = async (
     id: string,
     action: "new" | "resume",
@@ -172,63 +153,96 @@ export function App() {
       setActing(false);
     }
   };
-  const waiting = agents.reduce((sum, a) => sum + attention(a).length, 0);
+  const waiting = agents.reduce((n, a) => n + attention(a).length, 0);
   return (
     <div
-      className={`app-shell live-office ${snapshot.mode === "fixture" ? "fixture-office" : ""}`}
+      className={`app-shell immersive-office ${snapshot.mode === "fixture" ? "fixture-office" : ""} ${hudHidden ? "hud-hidden" : ""}`}
     >
-      <header className="topbar">
-        <a href="/" className="brand" aria-label="BlueOffice home">
-          <img src="/blueoffice-logo.png" alt="BlueOffice" />
-        </a>
-        <div className="place-label">
-          <span className="office-symbol" aria-hidden="true">
-            ▦
-          </span>
-          Your office
-        </div>
-        <div
-          className={`connection ${connected ? "online" : ""}`}
-          role="status"
-        >
-          <span />
-          {connected ? "Connected locally" : "Connecting…"}
-        </div>
-        <button onClick={() => setOverview(true)}>Office overview</button>
-        <button onClick={() => setActivity(true)}>Activity</button>
-        <span className="beta-label">Beta in progress</span>
-      </header>
-      {snapshot.mode === "fixture" ? (
-        <div className="fixture-banner">
-          Offline fixture office. Tasks and requests are synthetic; no model
-          calls are made.
-        </div>
-      ) : null}
-      <div
-        className="workspace"
-        ref={workspace}
-        style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}
-      >
-        <aside className="roster" aria-label="Office agents">
-          <div className="roster-title">
-            <h1>Office</h1>
-            <button
-              className="add-button"
-              aria-label="Add agent"
-              disabled={!connected}
-              onClick={() => {
-                setError("");
-                openSetup();
-              }}
+      <header className="office-hud">
+        <img
+          className="office-logo"
+          src="/blueoffice-logo.png"
+          alt="BlueOffice"
+        />
+        <div className="office-presence">
+          <span
+            className={`connection-dot ${connected ? "online" : ""}`}
+            role="status"
+            aria-label={connected ? "Connected locally" : "Connecting…"}
+            title={connected ? "Connected locally" : "Connecting…"}
+          />
+          {snapshot.mode === "fixture" && (
+            <span
+              className="fixture-tag"
+              title="Offline fixture office · synthetic runtime"
             >
-              +
-            </button>
-          </div>
-          <p className="roster-subtitle">A place for your assistants.</p>
-          <div className="office-counts">
-            <span>{agents.length} configured</span>
-            <span>{running} running</span>
-          </div>
+              Demo
+            </span>
+          )}
+        </div>
+      </header>
+      <button
+        className="hud-visibility hud-button"
+        aria-label={hudHidden ? "Show controls" : "Hide controls"}
+        title={hudHidden ? "Show controls" : "Hide controls"}
+        onClick={() => setHudHidden(!hudHidden)}
+      >
+        <GameIcon name="eye" />
+      </button>
+      <nav className="office-dock" aria-label="Office controls">
+        <button
+          className="hud-button"
+          aria-label="Agents"
+          title="Agents"
+          onClick={() => setRosterOpen(!rosterOpen)}
+        >
+          <GameIcon name="people" />
+          {waiting > 0 && <span className="hud-badge">{waiting}</span>}
+          <span>Agents</span>
+        </button>
+        <button
+          className="hud-button"
+          aria-label="Add agent"
+          title="Add assistant"
+          disabled={!connected}
+          onClick={openSetup}
+        >
+          <GameIcon name="add" />
+          <span>Add</span>
+        </button>
+        <button
+          className="hud-button"
+          aria-label="Office overview"
+          title="Office overview"
+          onClick={() => setOverview(true)}
+        >
+          <GameIcon name="office" />
+          <span>Office</span>
+        </button>
+        <button
+          className="hud-button"
+          aria-label="Activity"
+          title="Activity"
+          onClick={() => setActivity(true)}
+        >
+          <GameIcon name="history" />
+          <span>History</span>
+        </button>
+      </nav>
+      <button
+        className="office-settings hud-button"
+        aria-label="Office settings"
+        title="Office settings"
+        onClick={() => setRoomSettings(!roomSettings)}
+      >
+        <GameIcon name="settings" />
+      </button>
+      {rosterOpen && (
+        <GameWindow
+          title="Agents"
+          close={() => setRosterOpen(false)}
+          className="agents-window"
+        >
           <nav aria-label="Select an agent">
             {agents.map((a) => (
               <button
@@ -271,6 +285,7 @@ export function App() {
                 attention(a).map((request) => (
                   <button
                     key={request.id}
+                    aria-label={`Open ${request.kind === "approval" ? "permission" : "question"} for ${a.name}: ${request.id}`}
                     onClick={() => {
                       select(a.id);
                       setFocusRequest({ id: request.id });
@@ -287,15 +302,9 @@ export function App() {
               )}
             </section>
           )}
-          <div className="roster-bottom">
-            <span aria-hidden="true">☕</span>
-            <p>
-              Make room
-              <br />
-              for good work.
-            </p>
-          </div>
-        </aside>
+        </GameWindow>
+      )}
+      <div className="workspace">
         <main className="office-stage">
           {error ? (
             <div className="error-banner" role="alert">
@@ -324,27 +333,27 @@ export function App() {
               </button>
             </div>
           ))}
-          <LayoutTransfer
-            agents={agents}
-            connected={connected}
-            layout={snapshot.layout}
-            saved={(layout) =>
-              setSnapshot((current) => ({ ...current, layout }))
-            }
-          />
           <Suspense
-            fallback={
-              <div className="scene-loading">
-                Opening the office… Chat and agent controls remain available.
-              </div>
-            }
+            fallback={<div className="scene-loading">Opening the office…</div>}
           >
             <OfficeScene
+              settingsOpen={roomSettings}
+              closeSettings={() => setRoomSettings(false)}
+              transfer={
+                <LayoutTransfer
+                  agents={agents}
+                  connected={connected}
+                  layout={snapshot.layout}
+                  saved={(layout) =>
+                    setSnapshot((current) => ({ ...current, layout }))
+                  }
+                />
+              }
               agents={agents}
               layout={snapshot.layout}
               locate={locate}
               connected={connected}
-              selected={agent?.id}
+              selected={chatOpen ? agent?.id : undefined}
               select={select}
               focusRequest={(agentId, requestId) => {
                 select(agentId);
@@ -353,52 +362,18 @@ export function App() {
             />
           </Suspense>
         </main>
-        <div
-          role="separator"
-          aria-label="Resize conversation"
-          aria-orientation="vertical"
-          aria-valuemin={320}
-          aria-valuemax={560}
-          aria-valuenow={Math.round(chatWidth)}
-          aria-controls="conversation-panel"
-          tabIndex={0}
-          className="chat-resizer"
-          onPointerDown={(event) => {
-            dragging.current = true;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            event.preventDefault();
-          }}
-          onPointerMove={(event) => {
-            if (dragging.current && workspace.current)
-              resizeChat(
-                workspace.current.getBoundingClientRect().right - event.clientX,
-              );
-          }}
-          onPointerUp={() => {
-            dragging.current = false;
-          }}
-          onPointerCancel={() => {
-            dragging.current = false;
-          }}
-          onKeyDown={(event) => {
-            if (
-              ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
-            ) {
-              event.preventDefault();
-              resizeChat(
-                event.key === "Home"
-                  ? 320
-                  : event.key === "End"
-                    ? 560
-                    : chatWidth + (event.key === "ArrowLeft" ? 20 : -20),
-              );
-            }
-          }}
-        />
-        <div id="conversation-panel" className="office-conversation">
-          {agent ? (
+      </div>
+      {agent && (
+        <GameWindow
+          title={agent.name}
+          open={chatOpen}
+          close={() => setChatOpen(false)}
+          className="conversation-window"
+        >
+          <div id="conversation-panel" className="office-conversation">
             <Chat
               key={agent.id}
+              visible={chatOpen}
               agent={agent}
               connected={connected}
               run={run}
@@ -407,19 +382,9 @@ export function App() {
               settings={() => setSettingsFor(agent.id)}
               newConversation={() => conversation(agent.id, "new")}
             />
-          ) : (
-            <aside className="empty-chat">
-              <span aria-hidden="true">◌</span>
-              <h2>
-                Every good task
-                <br />
-                starts with a conversation.
-              </h2>
-              <p>Your assistant’s chat will appear here.</p>
-            </aside>
-          )}
-        </div>
-      </div>
+          </div>
+        </GameWindow>
+      )}
       {activity && (
         <dialog
           ref={activityDialog}

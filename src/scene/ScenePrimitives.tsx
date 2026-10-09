@@ -292,6 +292,19 @@ export function Avatar({
   useEffect(() => {
     instance.mixer.setTime(time);
   }, [instance, time]);
+  useEffect(() => {
+    if (playing) return;
+    const active = activeAction.current;
+    for (const animation of asset.gltf.animations) {
+      const action = instance.mixer.existingAction(animation);
+      if (action && action !== active) action.enabled = false;
+    }
+    if (active) {
+      active.stopFading().setEffectiveWeight(1);
+      active.enabled = true;
+      instance.mixer.update(0);
+    }
+  }, [instance, playing]);
   useFrame((_, delta) => {
     renderedTransform.current = advanceAvatarTransform(
       renderedTransform.current,

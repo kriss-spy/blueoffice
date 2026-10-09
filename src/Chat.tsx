@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   presentAgent,
   type OfficeAgent,
@@ -21,6 +15,7 @@ export function Chat({
   acting,
   settings,
   newConversation,
+  visible = true,
 }: {
   agent: OfficeAgent;
   connected: boolean;
@@ -29,6 +24,7 @@ export function Chat({
   acting: boolean;
   settings: () => void;
   newConversation: () => Promise<void>;
+  visible?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -37,7 +33,11 @@ export function Chat({
   const savedPosition = useRef(readPosition(agent.id));
   const follow = useRef(savedPosition.current.follow);
   const savePosition = () => {
-    if (!transcript.current) return;
+    if (!transcript.current?.getClientRects().length) return;
+    savedPosition.current = {
+      top: transcript.current.scrollTop,
+      follow: follow.current,
+    };
     try {
       localStorage.setItem(
         `blueoffice.chat-position.v1:${agent.id}`,
@@ -50,12 +50,12 @@ export function Chat({
       /* Browser storage may be disabled. */
     }
   };
-  useLayoutEffect(() => {
-    if (transcript.current)
+  useEffect(() => {
+    if (visible && transcript.current)
       transcript.current.scrollTop = follow.current
         ? transcript.current.scrollHeight
         : savedPosition.current.top;
-  }, []);
+  }, [visible]);
   useEffect(() => {
     window.addEventListener("pagehide", savePosition);
     return () => {
@@ -81,11 +81,11 @@ export function Chat({
           ? "Finish or explicitly stop the current task before starting a new conversation."
           : "";
   useEffect(() => {
-    if (follow.current && transcript.current)
+    if (visible && follow.current && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [agent.messages, agent.requests]);
+  }, [agent.messages, agent.requests, visible]);
   useEffect(() => {
-    if (!focusRequest) return;
+    if (!visible || !focusRequest) return;
     const card = [
       ...(transcript.current?.querySelectorAll<HTMLElement>(
         "[data-request-id]",
@@ -93,7 +93,7 @@ export function Chat({
     ].find((el) => el.dataset.requestId === focusRequest.id);
     card?.focus();
     card?.scrollIntoView({ block: "nearest" });
-  }, [focusRequest]);
+  }, [focusRequest, visible]);
   const target = { epoch: agent.epoch!, sessionId: agent.liveSessionId! };
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -228,6 +228,7 @@ export function Chat({
         className="transcript"
         ref={transcript}
         onScroll={() => {
+          if (!visible || !transcript.current?.getClientRects().length) return;
           const el = transcript.current!;
           follow.current =
             el.scrollHeight - el.scrollTop - el.clientHeight < 80;
