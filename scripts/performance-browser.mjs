@@ -564,6 +564,8 @@ try {
   let journalBefore = office.snapshot().revision;
   await page.evaluate(() => {
     window.__bench.updateEvents = 0;
+    window.__bench.streamEvents = [];
+    window.__bench.streamChunks = {};
     const Original = window.EventSource;
     // Count batches using a second owned subscriber, without changing the application stream.
     const open = async () => {
@@ -571,10 +573,30 @@ try {
       window.__bench.stream = new Original(
         `/api/events?since=${snapshot.revision}&journal=${encodeURIComponent(snapshot.journalId)}`,
       );
-      window.__bench.stream.addEventListener(
-        "updates",
-        () => window.__bench.updateEvents++,
-      );
+      window.__bench.stream.addEventListener("updates", (message) => {
+        window.__bench.updateEvents++;
+        for (const event of JSON.parse(message.data).events) {
+          if (event.revision <= window.__bench.streamFromRevision) continue;
+          window.__bench.streamEvents.push({
+            revision: event.revision,
+            key: event.key,
+            kind: event.kind,
+            agentId: event.agentId,
+          });
+          const chunks = (window.__bench.streamChunks[event.agentId] ??= []);
+          for (const item of [
+            ...event.change.messages.append,
+            ...event.change.messages.upsert,
+          ]) {
+            for (const match of item.text.matchAll(
+              /Public stream chunk (\d+)\./g,
+            )) {
+              const index = Number(match[1]);
+              if (!chunks.includes(index)) chunks.push(index);
+            }
+          }
+        }
+      });
     };
     return open();
   });
@@ -603,9 +625,12 @@ try {
     .getByRole("button", { name: /Performance 8/ })
     .click();
   journalBefore = office.snapshot().revision;
-  await page.evaluate(() => {
+  await page.evaluate((revision) => {
     window.__bench.updateEvents = 0;
-  });
+    window.__bench.streamEvents = [];
+    window.__bench.streamChunks = {};
+    window.__bench.streamFromRevision = revision;
+  }, journalBefore);
   const streamStart = performance.now();
   await Promise.all(
     streamingAgents.map((agent) =>
@@ -657,16 +682,37 @@ try {
       document.querySelector("[data-office-scene]").dataset.officeScene,
     ).agents.every((agent) => agent.work === "completed"),
   );
+  const finalStreamRevision = office.snapshot().revision;
+  await page.waitForFunction(
+    (revision) =>
+      window.__bench.streamEvents.some((event) => event.revision === revision),
+    finalStreamRevision,
+  );
+  const expectedStreamEvents = office
+    .eventsSince(journalBefore, office.snapshot().journalId)
+    .events.map((event) => ({
+      revision: event.revision,
+      key: event.key,
+      kind: event.kind,
+      agentId: event.agentId,
+    }));
   const streamAfter = await page.evaluate(() => ({
     rigs: JSON.parse(
       document.querySelector("[data-office-scene]").dataset.officeScene,
     ).avatars,
     updates: window.__bench.updateEvents,
+    events: window.__bench.streamEvents,
+    chunks: window.__bench.streamChunks,
   }));
   report.streaming = {
     durationMs: performance.now() - streamStart,
     journalEvents: office.snapshot().revision - journalBefore,
     receivedUpdateBatches: streamAfter.updates,
+    expectedEvents: expectedStreamEvents,
+    receivedEvents: streamAfter.events,
+    allJournalEdgesDelivered:
+      JSON.stringify(expectedStreamEvents) ===
+      JSON.stringify(streamAfter.events),
     streamAgentIds: streamingAgents.map((agent) => agent.id),
     composerAgentId: composerAgent.id,
     workload:
@@ -699,12 +745,19 @@ try {
         userMessageCount: agent.messages.filter(
           (message) => message.role === "user",
         ).length,
-        streamChunksRetained: Array.from(
+        observedPublicChunkIndices: streamAfter.chunks[agent.id] ?? [],
+        streamChunksDelivered: Array.from(
           { length: 8 },
-          (_, index) => `Public stream chunk ${index}.`,
-        ).every((chunk) =>
-          agent.messages.some((message) => message.text?.includes(chunk)),
-        ),
+          (_, index) => index,
+        ).every((index) => streamAfter.chunks[agent.id]?.includes(index)),
+        retainedChunkIds: agent.messages.find(
+          (message) =>
+            message.role === "assistant" && message.turnId === agent.turnId,
+        )?.chunkIds,
+        authoritativeFinalText: agent.messages.find(
+          (message) =>
+            message.role === "assistant" && message.turnId === agent.turnId,
+        )?.text,
         finalComplete: agent.messages.some(
           (message) =>
             message.role === "assistant" &&
@@ -890,6 +943,7 @@ try {
     report.contextLoss.replyRetainsOtherRequests &&
     report.hiddenTab.additionalSceneFrames === 0 &&
     report.hiddenTab.pendingRequestsPreserved &&
+    report.streaming.allJournalEdgesDelivered &&
     report.streaming.geometryStable &&
     report.streaming.independentRigs &&
     report.streaming.completeAgents === 7 &&
@@ -897,7 +951,12 @@ try {
     report.streaming.inputBusyBefore === 7 &&
     report.streaming.inputBusyAfter === 7 &&
     report.streaming.retainedChunks.every(
-      (agent) => agent.finalComplete && agent.streamChunksRetained,
+      (agent) =>
+        agent.finalComplete &&
+        agent.streamChunksDelivered &&
+        agent.retainedChunkIds.length >= 10 &&
+        agent.authoritativeFinalText ===
+          "Fixture task complete. Your workspace is ready.",
     );
   report.performanceTargetsMet =
     !report.functionalOnly &&
