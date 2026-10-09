@@ -44,7 +44,7 @@ Evidence describes the exercised boundary. Synthetic native providers prove prot
 
 | Scenario                             | Current evidence boundary                                                                                                                                               |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Two independent agents               | Browser setup/overview scenarios use separate profiles and exact pending requests; native owned-runtime suite verifies independent processes and foreign-target refusal |
+| Two independent agents               | The distinct-avatar release browser scenario uses different blue/orange GLB bytes, hashes and reviewed references with separate profiles, exact requests, cross-agent refusal, settings isolation and reload identities. Shared-avatar regressions remain. The native suite verifies independent processes and foreign-target refusal |
 | Refresh and answer                   | Browser question/batch replay plus actual installed-Hermes structured clarification, exact answer and same-turn continuation                                            |
 | Deny approval                        | Browser exact denial plus actual native prevention of the disposable sentinel action                                                                                    |
 | Interrupt then Stop                  | Native runtime remains after interrupt and exits after Stop; owned leases isolate unrelated runtimes                                                                    |
@@ -61,3 +61,10 @@ A normal-mode startup/restart smoke passed at source `537330e`: the documented l
 - Research/capture images are reference material, not runtime default character packs; any chosen public source-package distribution needs its own accurate attribution review.
 - Final secret/configuration audit, refreshed startup smoke, performance and live-route acceptance are pending. Prior passing manifests remain evidence of their recorded source/environment, not an automatic final-release attestation.
 - Classroom/world selection, secretary routing, autonomous dispatch, hosted management, child avatars/control, natural seated transitions and unverified provider/runtime variants remain outside this release scope.
+
+
+## Independent product review
+
+An independent Astra High reviewer audited issue #18, the R01–R17 map, all seven success scenarios, native/fixture/visual evidence boundaries, startup smoke and local asset provenance. The only new product-evidence gap was the missing distinct-avatar variant; `tests/e2e/release-scenarios.spec.ts` now supplies it while retaining the shared-avatar regressions. The reviewer verified different material bytes and hashes and inspected the unchanged-source scoped passing browser record from worker `1ea0593` (integrated as `397ea0e`). This clears all identified product gaps, subject to the final combined source gates.
+
+The same review found no additional asset-provenance blocker within the selected local distribution: the owner-generated raster logo is accurately attributed without treating the generator's software license as a font/trademark grant, and private character/font files are not bundled. Current performance, live routing and final audit/acceptance records remain required. No source-review statement is substituted for those measurements.
