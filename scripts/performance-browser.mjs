@@ -69,6 +69,7 @@ app.server.on("request", (req, res) => {
 });
 let browser;
 let chromeProcess;
+let benchmarkPage;
 const report = {
   source: await sourceIdentity(),
   passed: false,
@@ -193,6 +194,7 @@ try {
     cpu: execFileSync("lscpu", ["-J"], { encoding: "utf8" }),
     memory: (await readFile("/proc/meminfo", "utf8")).split("\n").slice(0, 3),
   };
+  benchmarkPage = page;
   page.on("pageerror", (error) => report.errors.push(error.message));
   await page.addInitScript(() => {
     window.__bench = {
@@ -284,11 +286,25 @@ try {
           duration: entry.duration,
         });
     }).observe({ entryTypes: ["longtask"] });
-    document.addEventListener("input", () => {
+    document.addEventListener("input", (event) => {
+      if (
+        !(event.target instanceof HTMLTextAreaElement) ||
+        !event.target
+          .getAttribute("aria-label")
+          ?.startsWith("Message Performance")
+      )
+        return;
       const began = performance.now();
-      requestAnimationFrame(() =>
-        window.__bench.inputTimes.push(performance.now() - began),
-      );
+      requestAnimationFrame(() => {
+        const visibleFrame = performance.now();
+        window.__bench.inputTimes.push(visibleFrame - began);
+        window.__bench.inputEvents.push({
+          target: event.target.getAttribute("aria-label"),
+          began,
+          visibleFrame,
+          durationMs: visibleFrame - began,
+        });
+      });
     });
   });
   await page.addInitScript(
@@ -299,6 +315,10 @@ try {
   report.gpuTimingEnabled = process.argv.includes("--gpu-timing");
   await page.goto(
     `${url}/?performance=1${report.gpuTimingEnabled ? "&gpu-timing=1" : ""}`,
+  );
+  await page.bringToFront();
+  report.initialVisibility = await page.evaluate(
+    () => document.visibilityState,
   );
   await page.waitForFunction(
     () => {
@@ -440,14 +460,12 @@ try {
   await measure("ordinary", "working-seated");
   await measure("reduced", "working-seated");
   await Promise.all(
-    office
-      .snapshot()
-      .agents.map((agent) =>
-        office.interrupt(agent.id, {
-          epoch: agent.epoch,
-          sessionId: agent.liveSessionId,
-        }),
-      ),
+    office.snapshot().agents.map((agent) =>
+      office.interrupt(agent.id, {
+        epoch: agent.epoch,
+        sessionId: agent.liveSessionId,
+      }),
+    ),
   );
   // Dense input/stream scenarios stay within the owned fixture profiles.
   for (const agent of office.snapshot().agents)
@@ -540,6 +558,33 @@ try {
         ),
       ),
   );
+  await page.evaluate(() => {
+    window.__bench.inputTimes = [];
+    window.__bench.inputEvents = [];
+  });
+  const input = page.getByLabel("Message Performance 1", { exact: true });
+  const inputBusyBefore = office
+    .snapshot()
+    .agents.filter((agent) => agent.busy).length;
+  if (inputBusyBefore !== 8)
+    throw new Error("Input responsiveness requires eight unfinished streams");
+  await input.click();
+  await input.pressSequentially("Chat during active public streams", {
+    delay: 8,
+  });
+  await page.evaluate(
+    () =>
+      new Promise((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(done)),
+      ),
+  );
+  const inputBusyAfter = office
+    .snapshot()
+    .agents.filter((agent) => agent.busy).length;
+  if (inputBusyAfter !== 8)
+    throw new Error("Input measurement missed the active streaming window");
+  const inputTimes = await page.evaluate(() => window.__bench.inputTimes);
+  const inputEvents = await page.evaluate(() => window.__bench.inputEvents);
   {
     const deadline = Date.now() + 15000;
     while (office.snapshot().agents.some((agent) => agent.busy)) {
@@ -559,19 +604,13 @@ try {
     ).avatars,
     updates: window.__bench.updateEvents,
   }));
-  const input = page.getByLabel("Message Performance 1", { exact: true });
-  await input.fill("Chat responsiveness measurement");
-  await page.evaluate(
-    () =>
-      new Promise((done) =>
-        requestAnimationFrame(() => requestAnimationFrame(done)),
-      ),
-  );
-  const inputTimes = await page.evaluate(() => window.__bench.inputTimes);
   report.streaming = {
     durationMs: performance.now() - streamStart,
     journalEvents: office.snapshot().revision - journalBefore,
     receivedUpdateBatches: streamAfter.updates,
+    inputBusyBefore,
+    inputBusyAfter,
+    inputEvents,
     inputToFrameMs: inputTimes,
     inputToFrameP95Ms: percentile(inputTimes, 0.95),
     geometryStable: Object.keys(rigBefore).every(
@@ -784,6 +823,9 @@ try {
     report.streaming.geometryStable &&
     report.streaming.independentRigs &&
     report.streaming.completeAgents === 8 &&
+    report.streaming.inputEvents.length >= 20 &&
+    report.streaming.inputBusyBefore === 8 &&
+    report.streaming.inputBusyAfter === 8 &&
     report.streaming.retainedChunks.every(
       (agent) => agent.finalComplete && agent.streamChunksRetained,
     );
@@ -795,6 +837,21 @@ try {
   ];
 } catch (error) {
   report.error = error.message;
+  if (benchmarkPage && !benchmarkPage.isClosed()) {
+    report.failureBrowser = await benchmarkPage
+      .evaluate(() => ({
+        visibility: document.visibilityState,
+        url: location.href,
+        scene: document
+          .querySelector("[data-office-scene]")
+          ?.getAttribute("data-office-scene"),
+        performance: window.__blueofficePerformance,
+      }))
+      .catch(() => null);
+    await benchmarkPage
+      .screenshot({ path: join(output, "failure.png") })
+      .catch(() => {});
+  }
   console.error(error);
 } finally {
   report.finalSource = await sourceIdentity();

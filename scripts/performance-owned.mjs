@@ -92,6 +92,22 @@ async function measure(count, phase) {
       hz /
       wallSeconds,
     supervisorRssMiB: last.supervisor.rssBytes / 1048576,
+    rootsPresentAndStable: samples.every(
+      (sample) =>
+        sample.roots.length === count &&
+        sample.roots.every((pid) => {
+          const root = sample.processes.find((process) => process.pid === pid);
+          const original = first.processes.find(
+            (process) => process.pid === pid,
+          );
+          return (
+            root &&
+            original &&
+            root.started === original.started &&
+            first.roots.includes(pid)
+          );
+        }),
+    ),
     samples,
   };
   phases.push(record);
@@ -163,6 +179,7 @@ try {
           phases.length === 6 &&
           phases.every(
             (phase) =>
+              phase.rootsPresentAndStable &&
               Number.isFinite(phase.cpuPercentOfOneCore) &&
               phase.cpuPercentOfOneCore >= 0,
           ),

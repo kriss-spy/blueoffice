@@ -42,14 +42,23 @@ def main():
                 '--setenv', 'BLUEOFFICE_NODE', node, '--chdir', '/office',
                 installation['python'], '-B', '/office/scripts/performance-native-inner.py',
                 json.dumps(installation), str(args.seconds)]
+    def source_identity():
+        script = 'import {sourceIdentity} from "./scripts/verification-evidence.mjs"; console.log(JSON.stringify(await sourceIdentity()))'
+        return json.loads(subprocess.check_output([node, '--input-type=module', '-e', script], cwd=project, text=True))
+    source = source_identity()
     report = {'passed': False, 'hermesRevision': installation['revision'], 'isolation': 'bubblewrap unshare-all; fresh profiles; synthetic provider; no live credentials/network',
-              'host': {'platform': os.uname().sysname, 'release': os.uname().release}}
+              'source': source, 'host': {'platform': os.uname().sysname, 'release': os.uname().release, 'cpu': subprocess.check_output(['lscpu', '-J'], text=True), 'memory': Path('/proc/meminfo').read_text().splitlines()[:3], 'os': Path('/etc/os-release').read_text()}}
     (output / 'report.json').write_text(json.dumps(report, indent=2))
     with (output / 'runner.log').open('w') as log:
         result = subprocess.run(command, timeout=180, stdout=log, stderr=subprocess.STDOUT, text=True)
     if result.returncode:
         raise RuntimeError(f'Native measurement failed ({result.returncode}); inspect {output / "runner.log"}')
-    if not json.loads((output / 'report.json').read_text()).get('passed'):
+    measured = json.loads((output / 'report.json').read_text())
+    final_source = source_identity()
+    measured.update({'host': report['host'], 'isolation': report['isolation'], 'source': source, 'finalSource': final_source, 'sourceUnchanged': source['fingerprint'] == final_source['fingerprint']})
+    measured['passed'] = bool(measured.get('passed') and measured['sourceUnchanged'])
+    (output / 'report.json').write_text(json.dumps(measured, indent=2))
+    if not measured['passed']:
         raise RuntimeError('Native samples are incomplete or invalid; inspect report.json')
     print(f'Native performance evidence: {output / "report.json"}')
 
