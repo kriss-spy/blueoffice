@@ -25,6 +25,29 @@ const target = z
   .object({ epoch: z.uuid(), sessionId: z.string().min(1).max(200) })
   .strict();
 const commandId = z.uuid();
+const conversationInput = z.discriminatedUnion("action", [
+  z
+    .object({
+      commandId,
+      expectedTarget: z.union([
+        target,
+        z.object({ epoch: z.null(), sessionId: z.null() }).strict(),
+      ]),
+      action: z.literal("new"),
+    })
+    .strict(),
+  z
+    .object({
+      commandId,
+      expectedTarget: z.union([
+        target,
+        z.object({ epoch: z.null(), sessionId: z.null() }).strict(),
+      ]),
+      action: z.literal("resume"),
+      historyId: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict(),
+]);
 const createInput = z
   .object({
     model: z.enum(MODEL_IDS).default("glm-5.3-flash"),
@@ -398,6 +421,27 @@ export function officeServer(
               input.values,
               input.acknowledgeOwnership,
               input.placement,
+            ),
+          );
+          return;
+        }
+        const conversationRoute =
+          /^\/api\/agents\/([a-f0-9-]{36})\/conversation$/.exec(url.pathname);
+        if (conversationRoute && req.method === "POST") {
+          const input = conversationInput.parse(await body(req));
+          const id = conversationRoute[1];
+          const action =
+            input.action === "resume"
+              ? await history.ownedResumeTarget(input.historyId, id)
+              : { kind: "new" as const };
+          send(
+            res,
+            200,
+            await office.conversation(
+              id,
+              input.commandId,
+              input.expectedTarget,
+              action,
             ),
           );
           return;

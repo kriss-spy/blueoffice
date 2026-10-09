@@ -143,6 +143,35 @@ export function App() {
     }
   };
   const running = agents.filter((a) => a.lifecycle === "ready").length;
+  const conversation = async (
+    id: string,
+    action: "new" | "resume",
+    historyId?: string,
+  ) => {
+    const current = agents.find((candidate) => candidate.id === id);
+    if (!current || !connected)
+      throw new Error(
+        "Reconnect to this assistant before changing conversations.",
+      );
+    setActing(true);
+    try {
+      const receipt = (await command(`/api/agents/${id}/conversation`, {
+        commandId: crypto.randomUUID(),
+        expectedTarget: {
+          epoch: current.epoch,
+          sessionId: current.liveSessionId,
+        },
+        action,
+        ...(historyId ? { historyId } : {}),
+      })) as { state: string; message: string };
+      if (receipt.state !== "accepted") throw new Error(receipt.message);
+      // Only this explicit transition selects its owner; inspecting history does not.
+      select(id);
+      setFocusRequest(undefined);
+    } finally {
+      setActing(false);
+    }
+  };
   const waiting = agents.reduce((sum, a) => sum + attention(a).length, 0);
   return (
     <div
@@ -376,6 +405,7 @@ export function App() {
               focusRequest={focusRequest}
               acting={acting}
               settings={() => setSettingsFor(agent.id)}
+              newConversation={() => conversation(agent.id, "new")}
             />
           ) : (
             <aside className="empty-chat">
@@ -407,6 +437,13 @@ export function App() {
             agents={agents}
             revision={snapshot.revision}
             connected={connected}
+            onResume={(session) => {
+              if (!session.agentId)
+                return Promise.reject(
+                  new Error("This history has no owned assistant."),
+                );
+              return conversation(session.agentId, "resume", session.id);
+            }}
           />
         </dialog>
       )}
