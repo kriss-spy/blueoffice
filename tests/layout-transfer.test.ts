@@ -9,6 +9,7 @@ import { LayoutTransferService } from "../server/layout-transfer.js";
 import { LayoutError, LayoutService } from "../server/layout.js";
 import type { OfficeAgent } from "../shared/office.js";
 import type { CharacterPack } from "../shared/assets.js";
+import { layoutManifestSchema } from "../shared/layout-transfer.js";
 import { newWorkstation } from "../shared/layout.js";
 const refA = {
   assetId: "character.test",
@@ -316,6 +317,161 @@ test("binding maps cannot satisfy explicit references through inherited object p
     assert.throws(() => transfer.preview(input, {}), LayoutError);
     const valid = transfer.preview(input, { constructor: null });
     assert.equal(valid.bindings.constructor, null);
+    store.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("portable capacity includes locals and prevents later creation or generation growth", () => {
+  const { root, store, transfer } = setup();
+  try {
+    const input = transfer.export();
+    input.agents = Array.from({ length: 64 }, (_, i) => ({
+      agentId: `foreign-${i}`,
+      deskId: null,
+      avatar: null,
+    }));
+    const before = store.agents();
+    const revision = store.layoutSnapshot().revision;
+    assert.throws(() => transfer.preview(input), /exceed the 64 portable/);
+    assert.throws(
+      () =>
+        transfer.import({
+          baseRevision: revision,
+          manifest: input,
+          bindings: Object.fromEntries(
+            input.agents.map((ref) => [ref.agentId, null]),
+          ),
+        }),
+      /exceed the 64 portable/,
+    );
+    assert.equal(store.layoutSnapshot().revision, revision);
+    assert.deepEqual(store.agents(), before);
+    input.agents.pop();
+    for (let generation = 0; generation < 3; generation++) {
+      const preview = transfer.preview(input);
+      transfer.import({
+        baseRevision: preview.baseRevision,
+        manifest: input,
+        bindings: preview.bindings,
+      });
+      const exported = transfer.export();
+      assert.equal(exported.agents.length, 64);
+      assert.ok(layoutManifestSchema.safeParse(exported).success);
+      input.agents = exported.agents;
+    }
+    assert.throws(() => store.assertCanAddAgents(), /portable reference slots/);
+    const full = store.layoutSnapshot();
+    const events = store.revision();
+    assert.throws(
+      () => store.save(agent("new-local", null), "create", "over-capacity"),
+      /portable reference slots/,
+    );
+    assert.deepEqual(store.agents(), before);
+    assert.deepEqual(store.layoutSnapshot(), full);
+    assert.equal(store.revision(), events);
+    store.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("missing and incomplete bound desks survive fallback and only explicit assignment changes supersede them", () => {
+  for (const incomplete of [false, true]) {
+    const { root, store, transfer } = setup();
+    try {
+      const input = transfer.export();
+      input.agents[0].deskId = "missing-desk";
+      if (incomplete) {
+        const desk = newWorkstation("missing-desk", [1, 0, 0]);
+        desk.components.chair = false;
+        input.placements = [desk];
+      }
+      const before = store.agents()[0];
+      const preview = transfer.preview(input);
+      assert.ok(preview.diagnostics.some((d) => d.code === "missing-desk"));
+      transfer.import({
+        baseRevision: preview.baseRevision,
+        manifest: input,
+        bindings: preview.bindings,
+      });
+      assert.equal(store.agents()[0].deskId, null);
+      assert.deepEqual({ ...store.agents()[0], deskId: before.deskId }, before);
+      let exported = transfer.export();
+      assert.equal(exported.agents[0].deskId, "missing-desk");
+      const repeated = transfer.preview(exported);
+      assert.ok(repeated.diagnostics.some((d) => d.code === "missing-desk"));
+      transfer.import({
+        baseRevision: repeated.baseRevision,
+        manifest: exported,
+        bindings: repeated.bindings,
+      });
+      // Runtime updates, character reassignment and no-op layout saves are not desk choices.
+      store.save(store.agents()[0], "runtime", "runtime");
+      store.save(
+        { ...store.agents()[0], avatar: refB, avatarId: refB.assetId },
+        "avatar.assigned",
+        "avatar",
+      );
+      const current = store.layoutSnapshot();
+      store.saveLayout({
+        baseRevision: current.revision,
+        draft: {
+          placements: current.placements,
+          assignments: current.assignments,
+        },
+      });
+      assert.equal(transfer.export().agents[0].deskId, "missing-desk");
+      const latest = store.layoutSnapshot();
+      store.saveLayout({
+        baseRevision: latest.revision,
+        draft: {
+          placements: [newWorkstation("chosen", [1, 0, 0])],
+          assignments: { "agent-1": "chosen" },
+        },
+      });
+      assert.equal(transfer.export().agents[0].deskId, "chosen");
+      store.save(
+        { ...store.agents()[0], deskId: null },
+        "desk.assigned",
+        "unassign",
+      );
+      exported = transfer.export();
+      assert.equal(exported.agents[0].deskId, null);
+      assert.equal(store.agents()[0].requests[0].id, before.requests[0].id);
+      assert.equal(store.agents()[0].turnId, before.turnId);
+      store.close();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("agent creation after import consumes exactly one remaining portable slot", () => {
+  const { root, store, transfer } = setup();
+  try {
+    const input = transfer.export();
+    input.agents = Array.from({ length: 62 }, (_, i) => ({
+      agentId: `foreign-${i}`,
+      deskId: null,
+      avatar: null,
+    }));
+    const preview = transfer.preview(input);
+    transfer.import({
+      baseRevision: preview.baseRevision,
+      manifest: input,
+      bindings: preview.bindings,
+    });
+    store.assertCanAddAgents();
+    store.save(agent("new-local", null), "create", "new-local");
+    assert.equal(transfer.export().agents.length, 64);
+    assert.ok(layoutManifestSchema.safeParse(transfer.export()).success);
+    assert.throws(
+      () => store.save(agent("extra-local", null), "create", "extra-local"),
+      /portable reference slots/,
+    );
+    assert.equal(store.agents().length, 2);
     store.close();
   } finally {
     rmSync(root, { recursive: true, force: true });

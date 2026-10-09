@@ -159,7 +159,13 @@ export class Office extends EventEmitter {
       let reservation: ReturnType<Office["reserveSetup"]> | undefined;
       try {
         if (!this.agents.has(intent.id)) {
+          if (this.agents.size + this.pendingCreations >= 8)
+            throw new OfficeError(
+              "This office cannot recover another agent right now.",
+            );
+          this.store.assertCanAddAgents(this.pendingCreations + 1);
           reservation = this.reserveSetup(intent.placement);
+          this.pendingCreations++;
           const snapshot = (await this.factory.profile({
             action: "read",
             profileHome: intent.profileHome,
@@ -182,7 +188,10 @@ export class Office extends EventEmitter {
       } catch {
         /* Keep the durable intent visible for explicit inspection/retry. */
       } finally {
-        if (reservation) this.setupReservations.delete(reservation.token);
+        if (reservation) {
+          this.pendingCreations--;
+          this.setupReservations.delete(reservation.token);
+        }
       }
     }
   }
@@ -300,6 +309,7 @@ export class Office extends EventEmitter {
       throw new OfficeError(
         "This beta supports up to eight configured agents.",
       );
+    this.store.assertCanAddAgents(this.pendingCreations + 1);
     const reservation = this.reserveSetup(placement);
     this.pendingCreations++;
     return this.trackMutation(
@@ -495,6 +505,7 @@ export class Office extends EventEmitter {
       throw new OfficeError(
         "This beta supports up to eight configured agents.",
       );
+    this.store.assertCanAddAgents(this.pendingCreations + 1);
     const reservation = this.reserveSetup(placement);
     this.pendingCreations++;
     return this.trackMutation(
