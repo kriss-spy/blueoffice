@@ -206,7 +206,7 @@ export class HermesRuntime implements RuntimeFactory {
       );
     } catch {
       throw new Error(
-        "The profile's effective route or passive-resume policy no longer matches its verified BlueOffice configuration. Stop this assistant, open Settings and save managed settings; remove conflicting environment overrides before starting.",
+        "The profile's effective route, approval policy or passive-resume policy no longer matches its verified BlueOffice configuration. Stop this assistant, open Settings and save managed settings; remove conflicting environment overrides before starting.",
       );
     }
     return {
