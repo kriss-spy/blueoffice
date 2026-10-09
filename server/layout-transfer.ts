@@ -4,6 +4,8 @@ import {
   type AssetRef,
 } from "../shared/assets.js";
 import {
+  portableAgentCapacity,
+  portableIdentityCount,
   layoutManifestSchema,
   layoutImportSchema,
   type LayoutManifest,
@@ -33,7 +35,7 @@ export class LayoutTransferService {
       const local = agents.find((agent) => agent.id === ref.boundAgentId);
       return {
         agentId: ref.agentId,
-        deskId: local ? local.deskId : ref.deskId,
+        deskId: ref.deskId,
         avatar: local ? (local.avatar ?? null) : ref.avatar,
       };
     });
@@ -63,7 +65,7 @@ export class LayoutTransferService {
           .map((ref) => [assetKey(ref.avatar!), { ref: ref.avatar! }]),
       ).values(),
     );
-    return {
+    const result = {
       format: "blueoffice.layout",
       schemaVersion: 1,
       workstationVersion: workstation.id,
@@ -71,6 +73,13 @@ export class LayoutTransferService {
       agents: references,
       assets,
     };
+    const parsed = layoutManifestSchema.safeParse(result);
+    if (!parsed.success)
+      throw new LayoutError(
+        `The office cannot be exported within schema 1: at most ${portableAgentCapacity} portable assistant and exact asset references are supported. Resolve imported references before adding assistants.`,
+        422,
+      );
+    return parsed.data;
   }
   preview(input: unknown, selectedBindings?: unknown): LayoutPreview {
     const parsed = layoutManifestSchema.safeParse(input);
@@ -188,6 +197,16 @@ export class LayoutTransferService {
     )
       throw new LayoutError(
         "Choose one unique existing local assistant for each binding, or leave it unresolved.",
+        422,
+      );
+    if (
+      portableIdentityCount(
+        manifest.agents.map((ref) => ({ boundAgentId: bindings[ref.agentId] })),
+        agents.map((agent) => agent.id),
+      ) > portableAgentCapacity
+    )
+      throw new LayoutError(
+        `This import would exceed the ${portableAgentCapacity} portable assistant references allowed after including local assistants. Bind imported references to existing assistants or reduce the manifest before preview/apply.`,
         422,
       );
     const diagnostics: TransferDiagnostic[] = [];

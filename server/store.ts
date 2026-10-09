@@ -6,6 +6,10 @@ import {
   type LayoutSnapshot,
   type LayoutDraft,
 } from "../shared/layout.js";
+import {
+  portableAgentCapacity,
+  portableIdentityCount,
+} from "../shared/layout-transfer.js";
 import { LayoutError } from "./layout.js";
 import type { AssetRef, CharacterPack } from "../shared/assets.js";
 import { randomUUID } from "node:crypto";
@@ -141,6 +145,22 @@ export class OfficeStore {
     );
     return this.writeLayout(draft, Number(rows[0].revision) + 1, 0);
   }
+  /** Preflight before profile preparation; save() also enforces this atomically. */
+  assertCanAddAgents(count = 1): void {
+    const snapshot = this.layoutSnapshot();
+    if (
+      portableIdentityCount(
+        snapshot.references ?? [],
+        this.agents().map((agent) => agent.id),
+      ) +
+        count >
+      portableAgentCapacity
+    )
+      throw new LayoutError(
+        `Cannot add an assistant: the office uses all ${portableAgentCapacity} portable reference slots. Resolve imported references before adding another assistant.`,
+        422,
+      );
+  }
   saveLayout(
     input: LayoutSave,
     transfer?: LayoutTransferWrite,
@@ -213,7 +233,15 @@ export class OfficeStore {
       }
       const snapshot: LayoutSnapshot = {
         ...draft,
-        references: transfer?.references ?? previousSnapshot?.references ?? [],
+        references:
+          transfer?.references ??
+          (previousSnapshot?.references ?? []).map((ref) => {
+            const id = ref.boundAgentId;
+            return id &&
+              previousSnapshot?.assignments[id] !== draft.assignments[id]
+              ? { ...ref, deskId: draft.assignments[id] ?? null }
+              : ref;
+          }),
         avatars: { ...avatarBindings, ...transfer?.avatars },
         schemaVersion: 1,
         revision,
@@ -272,7 +300,14 @@ export class OfficeStore {
         "SELECT revision,body FROM layout_revisions ORDER BY revision DESC LIMIT 1",
       )
       .get();
-    if (!row) return;
+    if (!row) {
+      if (!wasKnown && this.agents().length > portableAgentCapacity)
+        throw new LayoutError(
+          `Cannot add more than ${portableAgentCapacity} portable assistants.`,
+          422,
+        );
+      return;
+    }
     let value: unknown;
     try {
       value = JSON.parse(String(row.body));
@@ -282,6 +317,15 @@ export class OfficeStore {
     const parsed = layoutSnapshotSchema.safeParse(value);
     if (!parsed.success || validateLayout(parsed.data).length) return;
     const ids = new Set(this.agents().map((current) => current.id));
+    if (
+      !wasKnown &&
+      portableIdentityCount(parsed.data.references ?? [], [...ids]) >
+        portableAgentCapacity
+    )
+      throw new LayoutError(
+        `Cannot add an assistant: the office already uses all ${portableAgentCapacity} portable reference slots. Resolve imported references before adding another assistant.`,
+        422,
+      );
     // Runtime state can still be persisted while a corrupt layout awaits recovery.
     if (
       Object.keys(parsed.data.assignments).some((id) => !ids.has(id)) ||
@@ -299,6 +343,12 @@ export class OfficeStore {
       ...parsed.data,
       revision: Number(row.revision) + 1,
       assignments: { ...parsed.data.assignments, [agent.id]: agent.deskId },
+      references: parsed.data.references?.map((ref) =>
+        ref.boundAgentId === agent.id &&
+        parsed.data.assignments[agent.id] !== agent.deskId
+          ? { ...ref, deskId: agent.deskId }
+          : ref,
+      ),
       ...(parsed.data.avatars
         ? {
             avatars: {
@@ -417,6 +467,13 @@ export class OfficeStore {
     key: string,
     command?: { id: string; fingerprint: string },
   ): void {
+    // Recover a damaged layout before checking new identity capacity; never discard
+    // its previous valid unresolved references merely because the newest row is corrupt.
+    if (
+      this.hasSavedLayout() &&
+      !this.agents().some((current) => current.id === agent.id)
+    )
+      this.assertCanAddAgents();
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const previous = this.db

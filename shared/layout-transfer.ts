@@ -2,6 +2,17 @@ import { z } from "zod";
 import { assetPath, assetRefSchema, type AssetRef } from "./assets.js";
 import { layoutDraftSchema, type LayoutSnapshot } from "./layout.js";
 import { workstation } from "./scene.js";
+export const portableAgentCapacity = 64;
+/** Each source identity plus each local identity not represented by a source needs one export slot. */
+export function portableIdentityCount(
+  references: { boundAgentId: string | null }[],
+  localIds: string[],
+): number {
+  const represented = new Set(references.map((ref) => ref.boundAgentId));
+  return (
+    references.length + localIds.filter((id) => !represented.has(id)).length
+  );
+}
 export const portableAgentId = z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/);
 export const portableAgentSchema = z
   .object({
@@ -19,12 +30,12 @@ export const layoutManifestSchema = z
     schemaVersion: z.literal(1),
     workstationVersion: z.literal(workstation.id),
     placements: layoutDraftSchema.shape.placements,
-    agents: z.array(portableAgentSchema).max(64),
+    agents: z.array(portableAgentSchema).max(portableAgentCapacity),
     assets: z
       .array(
         z.object({ ref: assetRefSchema, path: assetPath.optional() }).strict(),
       )
-      .max(64),
+      .max(portableAgentCapacity),
   })
   .strict();
 export type LayoutManifest = z.infer<typeof layoutManifestSchema>;
