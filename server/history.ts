@@ -162,6 +162,98 @@ export class HistoryService {
         }
       }
     }
+    // Native typed delegation edges only. Generic parent IDs may be compression.
+    for (const child of sessions.values()) {
+      if (
+        child.source !== "subagent" ||
+        !child.capability.lineage ||
+        child.lineageEvidence !== "native-delegate-marker" ||
+        !child.parentStoredSessionId ||
+        child.parentStoredSessionId === child.storedSessionId
+      )
+        continue;
+      const parent = sessions.get(
+        key(child.profileId, child.parentStoredSessionId),
+      );
+      let ancestor = parent;
+      const seen = new Set([child.id]);
+      while (
+        ancestor &&
+        !ancestor.agentId &&
+        ancestor.source === "subagent" &&
+        ancestor.capability.lineage &&
+        ancestor.lineageEvidence === "native-delegate-marker" &&
+        ancestor.parentStoredSessionId
+      ) {
+        if (seen.has(ancestor.id)) {
+          ancestor = undefined;
+          break;
+        }
+        seen.add(ancestor.id);
+        ancestor = sessions.get(
+          key(child.profileId, ancestor.parentStoredSessionId),
+        );
+      }
+      if (ancestor && seen.has(ancestor.id)) ancestor = undefined;
+      const owner = agents.find(
+        (a) =>
+          a.id === ancestor?.agentId &&
+          profiles.some(
+            (p) => p.id === child.profileId && p.home === a.profileHome,
+          ),
+      );
+      const captures =
+        owner?.historyChildren?.filter(
+          (c) =>
+            c.childStoredSessionId === child.storedSessionId &&
+            c.parentStoredSessionIds.includes(ancestor!.storedSessionId) &&
+            owner.conversations.some(
+              (b) =>
+                b.epoch === c.parentEpoch &&
+                b.liveSessionId === c.parentLiveSessionId &&
+                c.parentStoredSessionIds.some(
+                  (id) =>
+                    b.storedSessionIds.includes(id) || b.storedSessionId === id,
+                ),
+            ),
+        ) ?? [];
+      const statuses = new Set(
+        captures.filter((c) => c.terminal).map((c) => c.status),
+      );
+      const status = statuses.size === 1 ? [...statuses][0] : "unknown";
+      const outcome =
+        status === "completed" ||
+        status === "failed" ||
+        status === "interrupted"
+          ? status
+          : "unknown";
+      child.lineage = {
+        kind: "delegation",
+        parentHistoryId: parent?.id ?? null,
+        parentStoredSessionId: child.parentStoredSessionId,
+        parentAgentId: owner?.id ?? null,
+        parentAgentName: owner?.name ?? null,
+        outcome,
+        outcomeEvidence: outcome === "unknown" ? null : "native-event",
+      };
+      // Child history remains observed even when its parent is owned.
+      child.agentId = null;
+      child.agentName = null;
+      child.ownership = "observed";
+      child.live = false;
+      child.attention = false;
+      child.state =
+        outcome === "unknown"
+          ? "Unknown outcome"
+          : outcome[0].toUpperCase() + outcome.slice(1);
+      child.error = outcome === "failed";
+      child.capability = {
+        ...child.capability,
+        resume: false,
+        resumeReason:
+          "Delegated child history is observed. Child controls and resume are unavailable.",
+      };
+    }
     return { profiles, sessions, diagnostics, truncated };
   }
   private project(
@@ -171,6 +263,8 @@ export class HistoryService {
     capability: HistoryReadResult["capability"],
     persisted: boolean,
   ): HistorySession {
+    // Native children never inherit an office avatar or live control binding.
+    if (row.source === "subagent") owner = undefined;
     const conversations =
       owner?.conversations.filter(
         (c) =>
@@ -186,7 +280,11 @@ export class HistoryService {
           c.epoch === owner.epoch && c.liveSessionId === owner.liveSessionId,
       );
     const needsAttention = live && attention(owner!).length > 0;
-    const state = live ? presentAgent(owner!).label : historicalState(row);
+    const state = live
+      ? presentAgent(owner!).label
+      : row.source === "subagent"
+        ? "Unknown outcome"
+        : historicalState(row);
     return {
       ...row,
       id: key(profile.id, row.storedSessionId),
@@ -240,7 +338,9 @@ export class HistoryService {
         (!query.category ||
           query.category === "all" ||
           row.category === query.category) &&
-        (!query.agentId || row.agentId === query.agentId) &&
+        (!query.agentId ||
+          row.agentId === query.agentId ||
+          row.lineage?.parentAgentId === query.agentId) &&
         (!query.profileId || row.profileId === query.profileId) &&
         (!query.source || row.source === query.source) &&
         (after === null || at >= after) &&
@@ -324,7 +424,11 @@ export class HistoryService {
         "This history is no longer available. Refresh Activity and check the profile diagnostics.",
         404,
       );
-    return this.readDetail(row, index.profiles);
+    const detail = await this.readDetail(row, index.profiles);
+    detail.children = [...index.sessions.values()].filter(
+      (s) => s.lineage?.parentHistoryId === row.id,
+    );
+    return detail;
   }
   private async readDetail(
     session: HistorySession,

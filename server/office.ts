@@ -40,6 +40,7 @@ import type {
   SettingsResult,
 } from "../shared/settings.js";
 import { settingsSchema } from "../shared/settings.js";
+import { captureChild } from "./history-lineage.js";
 import type {
   ConversationAction,
   ConversationTarget,
@@ -1502,6 +1503,31 @@ export class Office extends EventEmitter {
     if (typeof params.seq === "number" && rpc.replayEpoch)
       agent.replay = { epoch: rpc.replayEpoch, sequence: params.seq };
     switch (type) {
+      case "subagent.spawn_requested":
+      case "subagent.start":
+      case "subagent.complete": {
+        const conversation = agent.conversations.find(
+          (c) =>
+            c.epoch === agent.epoch && c.liveSessionId === agent.liveSessionId,
+        );
+        const children = captureChild(
+          agent.historyChildren ?? [],
+          type,
+          payload,
+          {
+            epoch: agent.epoch!,
+            liveSessionId: agent.liveSessionId!,
+            storedSessionIds: [
+              ...(conversation?.storedSessionIds ?? []),
+              conversation?.storedSessionId ?? "",
+            ],
+            at: now(),
+          },
+        );
+        if (!children) return;
+        agent.historyChildren = children;
+        break;
+      }
       case "session.info":
         if (typeof payload.running === "boolean") agent.busy = payload.running;
         if (typeof payload.stored_session_id === "string") {

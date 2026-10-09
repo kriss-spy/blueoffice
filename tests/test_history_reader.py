@@ -10,6 +10,13 @@ spec.loader.exec_module(reader)
 
 
 class HistoryReaderTests(unittest.TestCase):
+    def test_delegation_requires_matching_native_marker_and_source(self):
+        row = {"id": "child", "source": "subagent", "parent_session_id": "parent", "model_config": '{"_delegate_from":"parent"}'}
+        self.assertEqual(reader.record(row)["parentStoredSessionId"], "parent")
+        self.assertEqual(reader.record(row)["lineageEvidence"], "native-delegate-marker")
+        for update in [{"source":"cli"}, {"model_config":"{}"}, {"model_config":'{"_delegate_from":"other"}'}, {"model_config":"broken"}, {"parent_session_id":"child", "model_config":'{"_delegate_from":"child"}'}]:
+            self.assertIsNone(reader.record({**row, **update})["parentStoredSessionId"])
+
     def test_public_strings_redact_credential_shapes(self):
         text = reader.safe("notes TOKEN=private-value Authorization: Bearer hidden-value sk-privatekey12345")
         self.assertNotIn("private-value", text)
