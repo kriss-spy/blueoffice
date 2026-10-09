@@ -20,3 +20,45 @@ export function percentile(samples: number[], quantile: number) {
     )
   ];
 }
+
+/** Admission uses the whole elapsed window, including a trailing renderer stall. */
+export function frameWindowMetrics(
+  samples: { at: number; deltaMs: number }[],
+  start: number,
+  end: number,
+) {
+  const frames = samples.filter(
+    (frame) =>
+      Number.isFinite(frame.at) && frame.at >= start && frame.at <= end,
+  );
+  const elapsedMs = end - start;
+  const valid = Number.isFinite(elapsedMs) && elapsedMs > 0;
+  const deltaSum = frames.reduce(
+    (sum, frame) => sum + Math.max(0, frame.deltaMs),
+    0,
+  );
+  const firstFrameDelayMs = frames.length ? frames[0].at - start : null;
+  const lastFrameLagMs = frames.length
+    ? end - frames[frames.length - 1].at
+    : null;
+  const coverageFraction =
+    valid && frames.length > 1
+      ? (frames[frames.length - 1].at - frames[0].at) / elapsedMs
+      : 0;
+  return {
+    elapsedMs,
+    frameCount: frames.length,
+    windowFps: valid ? (frames.length * 1000) / elapsedMs : null,
+    activeCadenceFps: deltaSum > 0 ? (frames.length * 1000) / deltaSum : null,
+    firstFrameDelayMs,
+    lastFrameLagMs,
+    coverageFraction,
+    completeWindow:
+      valid &&
+      coverageFraction >= 0.9 &&
+      firstFrameDelayMs !== null &&
+      firstFrameDelayMs <= 100 &&
+      lastFrameLagMs !== null &&
+      lastFrameLagMs <= 100,
+  };
+}

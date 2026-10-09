@@ -15,7 +15,7 @@ import { officeServer } from "../server/http.ts";
 import { attention } from "../shared/office.ts";
 import { layoutInventory } from "../shared/layout.ts";
 import { sourceIdentity } from "./verification-evidence.mjs";
-import { percentile } from "../shared/scene-quality.ts";
+import { percentile, frameWindowMetrics } from "../shared/scene-quality.ts";
 const option = (name, fallback) => {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : fallback;
@@ -135,7 +135,12 @@ try {
   await new Promise((done) => app.server.listen(0, "127.0.0.1", done));
   const url = `http://127.0.0.1:${app.server.address().port}`;
   const args = hardware
-    ? ["--use-gl=angle", "--use-angle=gl"]
+    ? [
+        "--use-gl=angle",
+        "--use-angle=gl",
+        "--enable-gpu",
+        "--disable-software-rasterizer",
+      ]
     : [
         "--use-gl=angle",
         "--use-angle=swiftshader",
@@ -148,16 +153,20 @@ try {
     // Default Playwright contexts force visible focus; attach without those
     // overrides so actual tab visibility and browser throttling are measurable.
     const profile = join(data, "chrome-profile");
+    const launchFlags = [
+      ...args,
+      ...(process.argv.includes("--headed") ? [] : ["--headless=new"]),
+      "--remote-debugging-port=0",
+      `--user-data-dir=${profile}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank",
+    ];
+    report.flags = launchFlags;
+    report.headless = !process.argv.includes("--headed");
     chromeProcess = spawn(
       option("--browser", "/usr/bin/google-chrome"),
-      [
-        ...args,
-        "--remote-debugging-port=0",
-        `--user-data-dir=${profile}`,
-        "--no-first-run",
-        "--no-default-browser-check",
-        "about:blank",
-      ],
+      launchFlags,
       { stdio: "ignore" },
     );
     const deadline = Date.now() + 15000;
@@ -219,6 +228,7 @@ try {
         width: innerWidth,
         height: innerHeight,
         devicePixelRatio,
+        visibility: document.visibilityState,
         canvasCss: rect && { width: rect.width, height: rect.height },
         canvasBuffer: canvas && { width: canvas.width, height: canvas.height },
       };
@@ -226,7 +236,8 @@ try {
     if (
       facts.width !== 1440 ||
       facts.height !== 900 ||
-      facts.devicePixelRatio !== 1.5
+      facts.devicePixelRatio !== 1.5 ||
+      facts.visibility !== "visible"
     )
       throw new Error(`Measured viewport is invalid: ${JSON.stringify(facts)}`);
     return facts;
@@ -249,7 +260,14 @@ try {
       markerTimes: {},
       longTasks: [],
       inputTimes: [],
+      visibilityEvents: [],
     };
+    document.addEventListener("visibilitychange", () =>
+      window.__bench.visibilityEvents.push({
+        at: performance.now(),
+        state: document.visibilityState,
+      }),
+    );
     for (const type of [WebGLRenderingContext, WebGL2RenderingContext])
       for (const method of [
         "drawArrays",
@@ -415,6 +433,12 @@ try {
   )[0];
   report.clockUncertaintyMs = bestClock.roundTripMs / 2;
   async function measure(quality, phase) {
+    await page.bringToFront();
+    await page.waitForFunction(
+      () => document.visibilityState === "visible",
+      undefined,
+      { polling: 100 },
+    );
     await applyViewport();
     const selector = page.getByRole("combobox", {
       name: "Scene quality",
@@ -429,6 +453,10 @@ try {
     await delay(sampleSeconds * 1000);
     const captured = await page.evaluate(
       (since) => ({
+        sampleEnd: performance.now(),
+        visibilityEvents: window.__bench.visibilityEvents.filter(
+          (event) => event.at >= since,
+        ),
         browserFrames: window.__bench.frames.filter(
           (frame) => frame.at >= since,
         ),
@@ -463,10 +491,12 @@ try {
     const actual =
       captured.scene?.frames.filter((frame) => frame.at >= since) ?? [];
     summary.actualSceneFrames = actual.length;
-    summary.actualSceneFps = actual.length
-      ? (1000 * actual.length) /
-        actual.reduce((sum, frame) => sum + frame.deltaMs, 0)
-      : null;
+    summary.frameWindow = frameWindowMetrics(actual, since, captured.sampleEnd);
+    summary.actualSceneFps = summary.frameWindow.windowFps;
+    summary.activeSceneCadenceFps = summary.frameWindow.activeCadenceFps;
+    summary.visibleThroughout = captured.visibilityEvents.every(
+      (event) => event.state === "visible",
+    );
     const gpu =
       captured.scene?.gpuSamples.filter((sample) => sample.at >= since) ?? [];
     summary.gpuMedianMs = percentile(
@@ -478,9 +508,15 @@ try {
       0.95,
     );
     summary.targetMet =
+      summary.visibleThroughout &&
+      summary.frameWindow.completeWindow &&
       summary.actualSceneFps !== null &&
       summary.actualSceneFps >= summary.targetFps;
     report.phases.push(summary);
+    if (!summary.visibleThroughout || !summary.frameWindow.completeWindow)
+      throw new Error(
+        `Incomplete visible sampling window for ${phase}/${quality}: ${JSON.stringify(summary.frameWindow)}`,
+      );
     await captureViewport(join(output, `${phase}-${quality}.png`));
     summary.viewportAfterCapture = await viewportFacts();
     console.log(
