@@ -1,6 +1,14 @@
 import { Component, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { Box3, LoopOnce, LoopRepeat, Mesh, Vector3 } from "three";
+import {
+  Box3,
+  LoopOnce,
+  LoopRepeat,
+  Mesh,
+  Vector3,
+  type AnimationAction,
+  type Group,
+} from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   type Point,
@@ -15,6 +23,8 @@ import {
   type AvatarAsset,
   type AvatarMotion,
 } from "./avatar";
+
+import { advanceAvatarTransform, avatarTransform } from "./avatar-transform";
 
 import { packSceneMarkers } from "../../shared/scene-markers";
 import { seatedPlacement, type SeatingTarget } from "../../shared/seating";
@@ -93,10 +103,13 @@ export function Camera({
     const target = controls.target.clone();
     const zoomRatio = camera.zoom / baseZoom.current;
     camera.position.set(10, 10, 13);
-    controls.target.set(0, 0.6, 0);
+    controls.target.set(0, 1.07, 0);
     camera.lookAt(controls.target);
     camera.updateMatrixWorld(true);
-    const box = new Box3(new Vector3(-5, -0.4, -4), new Vector3(5, 3.2, 4));
+    const box = new Box3(
+      new Vector3(-5.07, -0.36, -4.07),
+      new Vector3(5.07, 2.5, 4.07),
+    );
     const points = [];
     for (const x of [box.min.x, box.max.x])
       for (const y of [box.min.y, box.max.y])
@@ -106,8 +119,8 @@ export function Camera({
           );
     const extent = new Box3().setFromPoints(points).getSize(new Vector3());
     baseZoom.current = Math.min(
-      size.width / (extent.x + 1.2),
-      size.height / (extent.y + 0.6),
+      size.width / (extent.x + 0.45),
+      size.height / (extent.y + 0.4),
     );
     if (preserveView) {
       camera.position.add(target.clone().sub(controls.target));
@@ -138,7 +151,7 @@ export function Camera({
     }
     if (command.action === "locate" && command.target) {
       locatedTarget.current = command.target;
-      const next = new Vector3(command.target[0], 0.6, command.target[2]);
+      const next = new Vector3(command.target[0], 1.07, command.target[2]);
       camera.position.add(next.clone().sub(controls.target));
       controls.target.copy(next);
       camera.zoom = baseZoom.current * 1.5;
@@ -168,7 +181,7 @@ export function Camera({
       -zExtent,
       Math.min(zExtent, controls.target.z),
     );
-    controls.target.y = 0.6;
+    controls.target.y = 1.07;
     camera.position.add(controls.target.clone().sub(previous));
     camera.zoom = Math.max(
       baseZoom.current * 0.7,
@@ -249,27 +262,47 @@ export function Avatar({
     effectiveMotion,
     asset.clips,
   );
+  const root = useRef<Group>(null);
+  const targetTransform = avatarTransform(
+    position,
+    heading ?? (rotation * Math.PI) / 2,
+    motion === "seated" && placement.compatible ? placement : undefined,
+  );
+  const renderedTransform = useRef(targetTransform);
+  const activeAction = useRef<AnimationAction | undefined>(undefined);
   useEffect(() => {
-    instance.mixer.stopAllAction();
+    const previous = activeAction.current;
     const action = instance.mixer.clipAction(clip);
     action.reset();
+    action.time = time;
     action.setLoop(
-      motion === "react" ? LoopOnce : LoopRepeat,
-      motion === "react" ? 1 : Infinity,
+      effectiveMotion === "react" ? LoopOnce : LoopRepeat,
+      effectiveMotion === "react" ? 1 : Infinity,
     );
     action.clampWhenFinished = true;
-    action.play();
-    instance.mixer.setTime(time);
-    return () => {
-      instance.mixer.stopAllAction();
-      instance.mixer.uncacheRoot(instance.scene);
-    };
+    action.setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+    if (previous && previous !== action) {
+      if (playing) action.crossFadeFrom(previous, 0.4, false);
+      else previous.stop();
+    }
+    activeAction.current = action;
+    // Apply a paused or reduced-motion pose immediately without cosmetic motion.
+    instance.mixer.update(0);
   }, [instance, clip, cueKey]);
   useEffect(() => {
-    instance.mixer.clipAction(clip).reset().play();
     instance.mixer.setTime(time);
-  }, [instance, clip, time]);
+  }, [instance, time]);
   useFrame((_, delta) => {
+    renderedTransform.current = advanceAvatarTransform(
+      renderedTransform.current,
+      targetTransform,
+      delta,
+      playing,
+    );
+    if (root.current) {
+      root.current.position.set(...renderedTransform.current.position);
+      root.current.rotation.y = renderedTransform.current.heading;
+    }
     if (playing) instance.mixer.update(Math.min(delta, 0.05));
     instance.scene.updateMatrixWorld(true);
     measurement.current.elapsed += delta;
@@ -295,31 +328,15 @@ export function Avatar({
   });
   return (
     <group
-      position={position}
-      rotation={[0, heading ?? (rotation * Math.PI) / 2, 0]}
+      ref={root}
       onClick={(event) => {
         event.stopPropagation();
         onSelect();
       }}
     >
-      <group
-        position={
-          motion === "seated" && placement.compatible
-            ? placement.offset
-            : [0, 0, 0]
-        }
-        rotation={[
-          0,
-          motion === "seated" && placement.compatible
-            ? (placement.facing * Math.PI) / 2
-            : 0,
-          0,
-        ]}
-      >
-        <group scale={asset.scale}>
-          <group position={asset.offset}>
-            <primitive object={instance.scene} dispose={null} />
-          </group>
+      <group scale={asset.scale}>
+        <group position={asset.offset}>
+          <primitive object={instance.scene} dispose={null} />
         </group>
       </group>
     </group>
