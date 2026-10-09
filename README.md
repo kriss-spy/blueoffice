@@ -1,6 +1,8 @@
-# BlueOffice
+# BlueOffice — v1 concept prototype
 
-A local browser office for independent Hermes assistants, with a 2.5D café, persistent workstation and character assignments, public conversation history, and explicit task controls. See [current acceptance status](docs/STATUS.md); a passing fixture suite does not establish a finished release.
+An exploration of a local, game-like office for independent Hermes assistants. **V1 is closed as a concept prototype as of 2026-10-09.** The runtime foundation works, but the experience, furniture and character motion are not a finished product. Read the [lessons and closeout](docs/V1-PROTOTYPE.md) before continuing development.
+
+The final room-first experiment is preserved on `codex/immersive-office` and the `v1-prototype` checkpoint, separately from main. Its draft [PR #38](https://github.com/kriss-spy/blueoffice/pull/38) is being closed without integration because required browser CI did not pass. Historical beta evidence does not approve this changed design. The instructions below reproduce the prototype; they do not establish release readiness.
 
 ## Prerequisites and startup
 

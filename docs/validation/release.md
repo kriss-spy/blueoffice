@@ -1,4 +1,6 @@
-# Local beta release evidence
+# Historical local beta release evidence
+
+**Historical scope:** this evidence concerns PR #37 and its tested revision. It does not accept the later room-first scene or override the user’s decision to close v1 as a [concept prototype](../V1-PROTOTYPE.md). No new release acceptance is claimed by that closeout.
 
 This is the acceptance index for issue #18 and final integration PR #37. A release is complete only when the source-bound release command and both required GitHub checks pass. The selected distribution is the local source application with procedural room furniture, original synthesized notifications, neutral fallback avatars and separately imported character packs. Private representative character captures establish the recorded visual behavior; they do not grant redistribution rights.
 

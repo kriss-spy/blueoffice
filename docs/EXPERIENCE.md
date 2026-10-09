@@ -1,6 +1,6 @@
 # BlueOffice experience and interaction specification
 
-Status: proposed product design, 2026-10-08. The [visual research](research/visual-assets.md) separates observed café features from these proposed office behaviors. This document is a wireframe specification, not a visual mockup or captured game UI.
+Historical proposal, 2026-10-08. Its persistent sidebar composition was rejected in user feedback. The final v1 experiment uses a full-viewport room and explicitly opened windows; see [the presentation contract](IMMERSIVE-OFFICE.md) and [prototype lessons](V1-PROTOTYPE.md). Retain the following as design history, not the current screen specification. The [visual research](research/visual-assets.md) separates observed café features from these proposed office behaviors. This document is a wireframe specification, not a visual mockup or captured game UI.
 
 ## Screen composition
 

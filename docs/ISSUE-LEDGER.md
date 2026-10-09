@@ -1,4 +1,6 @@
-# BlueOffice remaining-ticket ledger
+# BlueOffice orchestration ledger (historical)
+
+**Closeout, 2026-10-09:** all 21 original issues are closed, and PRs #33–#37 are merged. V1 is now a concept prototype at the user’s request. PR #38 preserves the later room-first experiment without integration because required browser CI failed. See [current status](STATUS.md) and [lessons](V1-PROTOTYPE.md). The dated snapshots below preserve earlier progress and must not be read as active assignments.
 
 All original acceptance criteria remain authoritative. Start of this orchestration run: 2026-10-08 22:19 Asia/Shanghai; three-hour checkpoint: 2026-10-09 01:19. Initial estimate: 4–7 hours, with seated-work quality and performance as uncertain gates. Main includes verification PR #32. Required **Offline checks** and **Fixture browser flows** must pass before integration; release additionally requires reviewed product, visual, performance and live-route evidence.
 

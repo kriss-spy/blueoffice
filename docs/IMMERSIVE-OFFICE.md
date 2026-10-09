@@ -1,4 +1,4 @@
-# Room-first office iteration
+# Final v1 prototype: room-first office
 
 The home screen is a full-viewport café office. Agent rosters, chat, history, setup, and office settings open only through explicit interaction. Chat and the roster are movable in-room windows; opening them does not resize the canvas. The existing workflow forms are retained inside windows for a later interaction-design pass.
 
@@ -20,4 +20,4 @@ The home screen is a full-viewport café office. Agent rosters, chat, history, s
 
 The private Yuuka pack used for local screenshots is not bundled with this change. Its seated work clip is an authored static skeletal pose, not a native sit-down or typing animation. Crossfading improves transitions but does not supply missing animation art.
 
-This is a new visual iteration for user review. Previous beta visual/performance attestations do not accept this changed scene. Automated browser checks exercise navigation and runtime contracts; fixture footage is not evidence of live-provider routing or user aesthetic approval.
+This is the final visual experiment preserved in the [closed v1 concept prototype](V1-PROTOTYPE.md). The user classified the result as a concept; this is not aesthetic approval or a request for another implementation pass. Previous beta visual/performance attestations do not accept this changed scene. Automated browser checks exercise navigation and runtime contracts; fixture footage is not evidence of live-provider routing or user aesthetic approval.

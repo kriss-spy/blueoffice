@@ -1,4 +1,6 @@
-# BlueOffice planning pack
+# BlueOffice documentation
+
+**Current disposition: v1 concept prototype, closed 2026-10-09.** Start with [the lessons and closeout](V1-PROTOTYPE.md) and [status](STATUS.md). The planning pack below is retained as historical context; its proposed milestones are not an active work order.
 
 Research/specification completed 2026-10-08, Asia/Shanghai. Working name: BlueOffice. Target: local browser office for Hermes agents, inspired by Blue Archive café, with full agent management.
 
@@ -36,10 +38,10 @@ Persistent agents own avatars; sessions belong under them. This prevents each co
 - The official fan kit supplies 2D material; it is not an established 3D pack. Model repository availability does not establish redistribution permission.
 - Seated computer work is the main art/animation gap. Exact camera, materials, work poses, and performance require representative-scene validation.
 
-## Next concrete milestone
+## Original planned milestone (historical)
 
 For the source game's visual and interaction reference, see the [Blue Archive capture](../capture/blue-archive/START-HERE.md), including its screen atlas, proposed parameters, source manifest, and isolated browser study specimen.
 
 One controlled Hermes agent at one workstation: chat → real question → question-mark bubble → exact answer → resumed work, with refresh recovery and distinct interrupt/stop behavior. Validate one intended avatar and desk alignment at the same time, then expand to 8 agents, furniture editing, and activity/office views.
 
-No runtime/configuration/proxy changes, model calls, application implementation, or game-asset incorporation were performed. Planning artifacts preserve the supplied `RESOURCES.md` and logo. The research reports link the primary evidence; future integration results should record revision, environment, redacted traces, and measured outcomes.
+At the original planning checkpoint, no runtime/configuration/proxy changes, model calls, application implementation, or game-asset incorporation had been performed. Implementation subsequently progressed as recorded in STATUS.md. Planning artifacts preserve the supplied `RESOURCES.md` and logo. The research reports link the primary evidence; future integration results should record revision, environment, redacted traces, and measured outcomes.
