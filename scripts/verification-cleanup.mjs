@@ -3,6 +3,32 @@ import { resolve, sep, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 
+/** Recheck ownership after process exit; normal fixture teardown may have won. */
+export async function removeFixtureData(owner) {
+  try {
+    if ((await realpath(owner.data)) !== owner.data)
+      throw new Error("Fixture data root changed during cleanup");
+    const sentinel = JSON.parse(
+      await readFile(resolve(owner.data, ".verification-owner.json"), "utf8"),
+    );
+    if (sentinel.token !== owner.token)
+      throw new Error("Fixture data ownership changed during cleanup");
+    await rm(owner.data, { recursive: true, force: true });
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      try {
+        await lstat(owner.data);
+      } catch (missing) {
+        if (missing.code === "ENOENT") return false;
+        throw missing;
+      }
+    }
+    // A surviving root with a missing/replaced sentinel is not ours to delete.
+    throw error;
+  }
+}
+
 /** Stop only fixture processes and disposable data whose registration and sentinel agree. */
 export async function cleanupFixtures(output) {
   if (process.platform !== "linux") return { stoppedPids: [], removedData: [] };
@@ -93,16 +119,7 @@ export async function cleanupFixtures(output) {
   }
   const removedData = [];
   for (const owner of owners) {
-    // Revalidate immediately before removing this run's disposable root.
-    if ((await realpath(owner.data)) !== owner.data)
-      throw new Error("Fixture data root changed during cleanup");
-    const sentinel = JSON.parse(
-      await readFile(resolve(owner.data, ".verification-owner.json"), "utf8"),
-    );
-    if (sentinel.token !== owner.token)
-      throw new Error("Fixture data ownership changed during cleanup");
-    await rm(owner.data, { recursive: true, force: true });
-    removedData.push(owner.data);
+    if (await removeFixtureData(owner)) removedData.push(owner.data);
   }
   return { stoppedPids, removedData };
 }

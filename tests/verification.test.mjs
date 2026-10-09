@@ -174,6 +174,29 @@ test("fixture cleanup stops only a registered run's detached RPC process", async
   }
 });
 
+test("cleanup tolerates completed teardown but refuses a surviving unowned root", async () => {
+  const { removeFixtureData } =
+    await import("../scripts/verification-cleanup.mjs");
+  const data = await mkdtemp(join(tmpdir(), "blueoffice-ui-"));
+  const owner = { data, token: "original" };
+  try {
+    await assert.rejects(removeFixtureData(owner), { code: "ENOENT" });
+    await writeFile(
+      join(data, ".verification-owner.json"),
+      JSON.stringify({ token: "replacement" }),
+    );
+    await assert.rejects(removeFixtureData(owner), /ownership changed/);
+    await writeFile(
+      join(data, ".verification-owner.json"),
+      JSON.stringify({ token: "original" }),
+    );
+    assert.equal(await removeFixtureData(owner), true);
+    assert.equal(await removeFixtureData(owner), false);
+  } finally {
+    await rm(data, { recursive: true, force: true });
+  }
+});
+
 test("browser completion requires actual executed passes and records scoped runs", () => {
   const passing = {
     title: "flow",
