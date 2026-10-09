@@ -277,3 +277,15 @@
 .cafe-marker[data-collapsed="true"] {
   visibility: hidden !important;
 }
+.scene-dom-controls {
+  flex-wrap: wrap;
+}
+.scene-dom-controls label {
+  white-space: nowrap;
+}
+.scene-dom-controls input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  flex: none;
+  accent-color: #4c92be;
+}

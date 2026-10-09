@@ -31,6 +31,8 @@ import {
   type LayoutSnapshot,
 } from "../../shared/layout";
 import { LayoutEditor } from "./LayoutEditor";
+import { useSceneMotion } from "./useSceneMotion";
+import { SceneSound } from "./scene-sound";
 import { DOMAttentionQueue } from "./DOMAttentionQueue";
 import { SceneError } from "./SceneError";
 import { Room, Workstation } from "./Room";
@@ -130,6 +132,13 @@ export function OfficeScene({
   const liveMetrics = useRef<Metrics>({ avatars: {} });
   const markers = useRef<(HTMLButtonElement | null)[]>([]);
   const tracker = useRef(new CompletionTracker());
+  const sound = useRef(new SceneSound());
+  const [soundOn, setSoundOn] = useState(false);
+  const [soundError, setSoundError] = useState("");
+  const [lounge, setLounge] = useState(false);
+  const noticedRequests = useRef(new Set<string>());
+  const soundInitialized = useRef(false);
+  useEffect(() => () => sound.current.dispose(), []);
   const [cues, setCues] = useState<CompletionCues>({});
   const [reducedMotion, setReducedMotion] = useState(
     () => matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -142,6 +151,8 @@ export function OfficeScene({
   }, []);
   useEffect(() => {
     const ids = tracker.current.observe(agents, connected);
+    if (ids.length && soundOn && !hidden && !reducedMotion)
+      sound.current.play();
     setCues((previous) =>
       updateCompletionCues(
         previous,
@@ -151,7 +162,23 @@ export function OfficeScene({
         performance.now() + 3000,
       ),
     );
-  }, [agents, connected]);
+  }, [agents, connected, soundOn, hidden, reducedMotion]);
+  useEffect(() => {
+    const requestIds = agents.flatMap((a) =>
+      presentAgent(a, connected).requests.map((r) => `${a.id}/${r.id}`),
+    );
+    const fresh = requestIds.some((id) => !noticedRequests.current.has(id));
+    requestIds.forEach((id) => noticedRequests.current.add(id));
+    if (
+      soundInitialized.current &&
+      fresh &&
+      soundOn &&
+      !hidden &&
+      !reducedMotion
+    )
+      sound.current.play();
+    if (connected) soundInitialized.current = true;
+  }, [agents, connected, soundOn, hidden, reducedMotion]);
   useEffect(() => {
     const future = Object.values(cues)
       .map((cue) => cue.until)
@@ -170,7 +197,7 @@ export function OfficeScene({
     );
     return () => clearTimeout(timer);
   }, [cues]);
-  const occupants = agents.map((agent, i) => {
+  const baseOccupants = agents.map((agent, i) => {
     const assignedId = draft
       ? draft.assignments[agent.id]
       : savedLayout
@@ -215,6 +242,17 @@ export function OfficeScene({
     return {
       agent,
       desk,
+      standingPosition,
+      canReact:
+        !!entry?.asset?.clips?.react &&
+        entry.asset.gltf.animations.some(
+          (c) => c.name === entry.asset?.clips?.react,
+        ),
+      canWalk:
+        !!entry?.asset?.clips?.walk &&
+        entry.asset.gltf.animations.some(
+          (c) => c.name === entry.asset?.clips?.walk,
+        ),
       position: seated && desk ? desk.position : standingPosition,
       seating,
       seated,
@@ -235,8 +273,79 @@ export function OfficeScene({
             : "Loading character…"),
     };
   });
+  const intents = baseOccupants.map((o, i) => ({
+    id: o.agent.id,
+    goal:
+      o.view.tone === "working"
+        ? o.standingPosition
+        : lounge
+          ? safeStandingPosition(i)
+          : o.desk
+            ? worldAnchor(
+                workstation.anchors.approach,
+                o.desk.position,
+                o.desk.rotation,
+              )
+            : o.standingPosition,
+    fallback: o.standingPosition,
+    deskId: o.desk?.id,
+    destinationKey: JSON.stringify([
+      o.desk?.id,
+      o.desk?.position,
+      o.desk?.rotation,
+      o.view.tone === "working",
+      o.agent.turnId,
+      lounge,
+      o.canWalk,
+      hidden,
+      reducedMotion,
+      o.view.canCelebrate && cues[o.agent.id]?.key === o.view.terminalKey,
+    ]),
+    canWalk: o.canWalk,
+    preempt:
+      o.view.pauseMotion ||
+      o.view.requests.length > 0 ||
+      !connected ||
+      !!editing ||
+      (o.view.canCelebrate && cues[o.agent.id]?.key === o.view.terminalKey),
+    paused: hidden || reducedMotion || !!sceneFailure,
+  }));
+  const actors = useSceneMotion(
+    intents,
+    visibleLayout.placements,
+    hidden || reducedMotion || !!sceneFailure,
+  );
+  const occupants = baseOccupants.map((o, i) => {
+    const actor = actors[o.agent.id];
+    const preempt = intents[i].preempt || intents[i].paused;
+    const walking =
+      !preempt &&
+      !!actor?.walking &&
+      o.canWalk &&
+      actor.destinationKey === intents[i].destinationKey;
+    const seated = o.seated && !walking && !preempt && !actor?.reason;
+    return {
+      ...o,
+      walking,
+      heading: walking ? actor?.heading : undefined,
+      position: preempt
+        ? o.standingPosition
+        : walking
+          ? actor.position
+          : seated
+            ? o.position
+            : actor && actor.destinationKey === intents[i].destinationKey
+              ? actor.position
+              : o.standingPosition,
+      motionReason: actor?.reason,
+      route: walking ? actor.route : [],
+      seated,
+    };
+  });
   const isCueActive = (id: string, view: ReturnType<typeof presentAgent>) =>
-    view.canCelebrate && cues[id]?.key === view.terminalKey;
+    view.canCelebrate &&
+    cues[id]?.key === view.terminalKey &&
+    !!baseOccupants.find((o) => o.agent.id === id)?.canReact;
   const visibleDesks = visibleLayout.placements;
   const selectedCharacter = occupants.find((o) => o.agent.id === selected);
   const camera = (action: CameraCommand["action"]) =>
@@ -314,6 +423,39 @@ export function OfficeScene({
             ))}
           </select>
         </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={lounge}
+            onChange={(e) => setLounge(e.target.checked)}
+          />{" "}
+          Lounge idle assistants
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={soundOn}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              if (!enabled) {
+                setSoundOn(false);
+                return;
+              }
+              try {
+                await sound.current.enable();
+                setSoundOn(true);
+                setSoundError("");
+              } catch {
+                setSoundOn(false);
+                setSoundError(
+                  "Sound could not start; visual attention remains available.",
+                );
+              }
+            }}
+          />{" "}
+          Quiet notification sound
+        </label>
+        {soundError && <span role="status">{soundError}</span>}
         <span>
           {reducedMotion
             ? "Reduced motion · all status and request controls remain available"
@@ -373,7 +515,17 @@ export function OfficeScene({
                 />
               ))}
               {occupants.map(
-                ({ agent, position, desk, view, asset, seated, seating }) =>
+                ({
+                  agent,
+                  position,
+                  desk,
+                  view,
+                  asset,
+                  seated,
+                  seating,
+                  walking,
+                  heading,
+                }) =>
                   asset ? (
                     <Avatar
                       key={agent.id}
@@ -381,12 +533,20 @@ export function OfficeScene({
                       id={agent.id}
                       position={position}
                       rotation={desk?.rotation ?? 0}
+                      heading={heading}
+                      cueKey={
+                        isCueActive(agent.id, view)
+                          ? cues[agent.id]?.key
+                          : undefined
+                      }
                       motion={
-                        seated
-                          ? "seated"
-                          : isCueActive(agent.id, view)
-                            ? "react"
-                            : "idle"
+                        walking
+                          ? "walk"
+                          : seated
+                            ? "seated"
+                            : isCueActive(agent.id, view)
+                              ? "react"
+                              : "idle"
                       }
                       seating={seating}
                       playing={!reducedMotion && !hidden && !view.pauseMotion}
@@ -519,14 +679,20 @@ export function OfficeScene({
           </button>
           <button onClick={() => camera("reset")}>Reset view</button>
         </nav>
-        <span>
+        <span role="status">
           {selectedCharacter?.diagnostic
             ? `${selectedCharacter.agent.name}: ${selectedCharacter.diagnostic}`
-            : occupants.some((o) => o.asset)
-              ? occupants.some((o) => o.seated)
-                ? "Compatible characters seated at work"
-                : "Saved character assignments · standing pose"
-              : "Character placeholders shown"}
+            : selectedCharacter?.motionReason &&
+                !selectedCharacter.view.pauseMotion &&
+                !hidden &&
+                !reducedMotion &&
+                !selectedCharacter.view.canCelebrate
+              ? `${selectedCharacter.agent.name}: ${selectedCharacter.motionReason} Staying at a safe position.`
+              : occupants.some((o) => o.asset)
+                ? occupants.some((o) => o.seated)
+                  ? "Compatible characters seated at work"
+                  : "Saved character assignments · standing pose"
+                : "Character placeholders shown"}
         </span>
       </div>
       <DOMAttentionQueue
@@ -543,6 +709,9 @@ export function OfficeScene({
             generation: sceneGeneration,
             hidden,
             reducedMotion,
+            lounge,
+            soundOn,
+            soundsPlayed: sound.current.played,
           },
           layout: visibleLayout,
           editing: !!editing,
@@ -550,18 +719,41 @@ export function OfficeScene({
           camera: metrics.camera,
           assets: occupants.filter((o) => o.asset).map((o) => o.agent.avatar),
           avatars: metrics.avatars,
-          agents: occupants.map(({ agent, view, desk, diagnostic }) => ({
-            id: agent.id,
-            deskId: desk?.id,
-            avatar: agent.avatar,
-            diagnostic,
-            label: view.label,
-            work: agent.work,
-            requests: view.requests.map((request) => request.id),
-            cue: isCueActive(agent.id, view),
-            motion: isCueActive(agent.id, view) ? "react" : "idle",
-            paused: view.pauseMotion || reducedMotion || hidden,
-          })),
+          agents: occupants.map(
+            ({
+              agent,
+              view,
+              desk,
+              diagnostic,
+              position,
+              walking,
+              heading,
+              route,
+              motionReason,
+              seated,
+            }) => ({
+              id: agent.id,
+              deskId: desk?.id,
+              avatar: agent.avatar,
+              diagnostic,
+              label: view.label,
+              work: agent.work,
+              requests: view.requests.map((request) => request.id),
+              cue: isCueActive(agent.id, view),
+              motion: walking
+                ? "walk"
+                : seated
+                  ? "seated"
+                  : isCueActive(agent.id, view)
+                    ? "react"
+                    : "idle",
+              position,
+              heading,
+              route,
+              motionReason,
+              paused: view.pauseMotion || reducedMotion || hidden,
+            }),
+          ),
         })}
       />
       {layoutError && <p role="alert">{layoutError}</p>}

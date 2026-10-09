@@ -204,7 +204,11 @@ export function Avatar({
   metrics,
   onSelect,
   seating,
+  heading,
+  cueKey,
 }: {
+  heading?: number;
+  cueKey?: string;
   asset: AvatarAsset;
   seating?: SeatingTarget;
   id: string;
@@ -237,7 +241,10 @@ export function Avatar({
     instance.mixer.stopAllAction();
     const action = instance.mixer.clipAction(clip);
     action.reset();
-    action.setLoop(motion === "react" ? LoopOnce : LoopRepeat, Infinity);
+    action.setLoop(
+      motion === "react" ? LoopOnce : LoopRepeat,
+      motion === "react" ? 1 : Infinity,
+    );
     action.clampWhenFinished = true;
     action.play();
     instance.mixer.setTime(time);
@@ -245,7 +252,7 @@ export function Avatar({
       instance.mixer.stopAllAction();
       instance.mixer.uncacheRoot(instance.scene);
     };
-  }, [instance, clip]);
+  }, [instance, clip, cueKey]);
   useEffect(() => {
     instance.mixer.clipAction(clip).reset().play();
     instance.mixer.setTime(time);
@@ -278,7 +285,7 @@ export function Avatar({
   return (
     <group
       position={position}
-      rotation={[0, (rotation * Math.PI) / 2, 0]}
+      rotation={[0, heading ?? (rotation * Math.PI) / 2, 0]}
       onClick={(event) => {
         event.stopPropagation();
         onSelect();

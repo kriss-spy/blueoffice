@@ -1,3 +1,4 @@
+import { assignSceneTestPack } from "./scene-asset-fixture.js";
 import {
   test,
   expect,
@@ -155,6 +156,14 @@ test("context loss with reduced motion retains eight exact requests including un
   await expect
     .poll(async () => (await scene(page)).scene.reducedMotion)
     .toBe(true);
+  for (let i = 0; i < 4; i++)
+    await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  for (let i = 0; i < 6; i++)
+    await page.getByRole("button", { name: "Pan left", exact: true }).click();
+  await expect
+    .poll(async () => page.locator(".live-marker:visible").count())
+    .toBeLessThan(8);
+  await expect(queue.getByRole("button")).toHaveCount(8);
   await page.locator(".live-room canvas").evaluate((canvas) => {
     const context = (canvas as HTMLCanvasElement).getContext("webgl2");
     context?.getExtension("WEBGL_lose_context")?.loseContext();
@@ -191,4 +200,68 @@ test("context loss with reduced motion retains eight exact requests including un
       (await scene(page)).agents.every((a: { paused: boolean }) => a.paused),
     )
     .toBe(true);
+});
+
+test("failed character bytes preserve truthful fallback and keyboard exact attention across hidden return", async ({
+  page,
+  office,
+}) => {
+  await page.addInitScript(
+    `window.__testVisibility='visible';Object.defineProperty(document,'visibilityState',{get:()=>window.__testVisibility});`,
+  );
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  const before = (await snapshot(page)).agents[0];
+  await page.route("**/api/characters/**/files/avatar.glb", (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Character file missing." }),
+    }),
+  );
+  await assignSceneTestPack(page, before.id);
+  await expect(
+    page
+      .getByRole("status")
+      .filter({ hasText: "Hina: Character file missing." }),
+  ).toBeVisible();
+  await send(page, "Hina", "question");
+  await expect(
+    page.getByRole("region", { name: "Question request" }).last(),
+  ).toBeVisible();
+  const pending = (await snapshot(page)).agents[0].requests.at(-1)!;
+  const queue = page.getByRole("region", {
+    name: "Room attention",
+    exact: true,
+  });
+  await expect(queue.getByRole("button")).toHaveCount(1);
+  const visibility = async (state: string) =>
+    page.evaluate((state) => {
+      (window as unknown as { __testVisibility: string }).__testVisibility =
+        state;
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, state);
+  await visibility("hidden");
+  await expect.poll(async () => (await scene(page)).scene.hidden).toBe(true);
+  await expect
+    .poll(async () => (await scene(page)).agents[0].paused)
+    .toBe(true);
+  await visibility("visible");
+  await expect.poll(async () => (await scene(page)).scene.hidden).toBe(false);
+  await page.getByLabel("Select office assistant").focus();
+  await expect(page.getByLabel("Select office assistant")).toBeFocused();
+  await activate(
+    queue.getByRole("button", {
+      name: `Open question for Hina: ${pending.id}`,
+      exact: true,
+    }),
+  );
+  await expect(
+    page.getByRole("region", { name: "Question request" }).last(),
+  ).toBeVisible();
+  const after = (await snapshot(page)).agents[0];
+  expect(after.requests.at(-1)!.id).toBe(pending.id);
+  expect(after.liveSessionId).toBe(before.liveSessionId);
+  expect(after.epoch).toBe(before.epoch);
+  expect((await scene(page)).assets).toEqual([]);
 });
