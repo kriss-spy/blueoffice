@@ -10,7 +10,7 @@ The corrected isolated installed-Hermes probe tests both GLM Chat Completions an
 
 ## Accessible supervision
 
-Keyboard assistant/session selection, exact DOM attention, overlap collapse, reduced motion, graphics/asset fallback and distinct failures have code and browser coverage. The reviewer found one recovery presentation defect shared with motion: cancelling an unchanged Edit or retrying graphics can retain a transient controller reason and prevent seating until another state change. This remains a blocker until corrected and independently rechecked.
+Keyboard assistant/session selection, exact DOM attention, overlap collapse, reduced motion, graphics/asset fallback and distinct failures have code and browser coverage. The reviewer found one recovery presentation defect shared with motion: cancelling an unchanged Edit or retrying graphics can retain a transient controller reason and prevent seating until another state change. Correction `8963ed4` adds one-shot resumption after transient suspension. The same independent reviewer reproduced Edit→Cancel and actual WebGL context loss→Retry on `9834bd5`, passing seven units and the browser regression. Seated work returns, transient reasons clear, and exact task, session, layout and native command frames remain unchanged. A genuinely blocked route remains stationary without repeated planning. This blocker is cleared.
 
 ## Actual intended-character motion
 
@@ -20,4 +20,8 @@ The remaining #19 criteria are implemented: deterministic footprint routes and r
 
 ## Combined verification follow-up
 
-The first combined branch passes offline and all 34 fixture browser scenarios. Native integration exposed old error-copy assertions in the existing route probe after the resume policy diagnostic expanded. The assertions now match the current explicit refusal; endpoint/auxiliary/delegation mutations remain rejected. Fresh full combined gates, correction re-review and both required GitHub jobs remain mandatory before closure. No ticket or beta completion is declared by this record.
+The first combined branch passes offline and all 34 fixture browser scenarios. Native integration exposed old error-copy assertions in the existing route probe after the resume policy diagnostic expanded. The assertions now match the current explicit refusal; endpoint/auxiliary/delegation mutations remain rejected. The correction re-review is clear. Fresh full combined gates and both required GitHub jobs remain mandatory before closure. No ticket or beta completion is declared by this record.
+
+## Second independent correctness review
+
+A separate Astra High reviewer found no further ownership, route, epoch, transition serialization, privacy or motion-boundary defect, but reproduced a stopped/unknown UI mismatch: after telemetry failure and an explicit successful Stop, the server allowed New conversation while Chat still disabled it. Correction `eeaae53` matches the server by applying the work-phase block only to ready runtimes. Independent source re-review cleared it; the worker browser regression proves telemetry failure→keyboard Stop→keyboard New retains identity, creates one fresh explicit binding and never replays a prompt. All four scoped conversation scenarios and the offline gate pass. The native combined gate also identified lost approval-policy context in the generic safe startup error; that context was restored while retaining the approval-bypass assertion. The following full six-suite native attempt passed.
