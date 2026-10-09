@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Installed-Hermes passive owned resume evidence in a private synthetic namespace."""
+import argparse
 import hashlib
 import json
 import os
@@ -100,6 +101,9 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--inner":
         inner(json.loads(sys.argv[2]), sys.argv[3])
         return
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, help="Fresh evidence directory supplied by the verification runner")
+    args = parser.parse_args()
     from hermes_probe import discover
     launcher = shutil.which("hermes")
     if not launcher or not shutil.which("bwrap"):
@@ -108,10 +112,10 @@ def main():
     if installation["revision"] != "f1247d2e0146bbd8edd4e510b9e67e0d259509a4":
         raise RuntimeError("Installed Hermes revision has not been verified")
     installation["managedConfigs"] = json.loads(subprocess.check_output(["node", "--import", "tsx", "--input-type=module", "-e", "import {routingConfig} from './server/routes.ts'; console.log(JSON.stringify(Object.fromEntries(['glm-5.3-flash','muse-spark-1.3-contributor'].map(m=>[m,routingConfig(m)]))));"], text=True))
-    output = Path("artifacts/history-resume-probe") / str(time.time_ns())
-    output.mkdir(parents=True)
+    output = args.output or Path("artifacts/history-resume-probe") / str(time.time_ns())
+    output.mkdir(parents=True, exist_ok=True)
     output = output.resolve()
-    (output / "report.json").write_text(json.dumps({"passed": False, "phase": "running"}))
+    (output / "report.json").write_text(json.dumps({"passed": False, "runner_completed": False, "phase": "running"}))
     command = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--clearenv"]
     for directory in ("/usr", "/lib", "/lib64", "/bin", "/etc"):
         if Path(directory).exists():
@@ -133,13 +137,14 @@ def main():
         (evidence / "stdout.log").write_text(result.stdout)
         (evidence / "stderr.log").write_text(result.stderr)
         if result.returncode:
+            (output / "report.json").write_text(json.dumps({"passed": False, "runner_completed": False, "phase": "completed", "failedModel": model, "exitCode": result.returncode, "models": reports}, indent=2))
             print(result.stderr, file=sys.stderr)
             print("Resume probe evidence:", output)
             raise SystemExit(result.returncode)
         report = json.loads((evidence / "report.json").read_text())
         assert report["passed"]
         reports.append(report)
-    (output / "report.json").write_text(json.dumps({"passed": True, "hermesRevision": installation["revision"], "models": reports, "realProviderCalls": 0}, indent=2))
+    (output / "report.json").write_text(json.dumps({"passed": True, "runner_completed": True, "hermesRevision": installation["revision"], "models": reports, "realProviderCalls": 0}, indent=2))
     print("Resume probe evidence:", output)
 
 

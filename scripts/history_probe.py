@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Installed-Hermes history reader evidence in a private synthetic namespace."""
+import argparse
 import hashlib
 import json
 import os
@@ -64,6 +65,9 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--inner":
         inner(json.loads(sys.argv[2]))
         return
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, help="Fresh evidence directory supplied by the verification runner")
+    args = parser.parse_args()
     from hermes_probe import discover
     launcher = shutil.which("hermes")
     if not launcher or not shutil.which("bwrap"):
@@ -71,10 +75,10 @@ def main():
     installation = discover(launcher)
     if installation["revision"] != "f1247d2e0146bbd8edd4e510b9e67e0d259509a4":
         raise RuntimeError("Installed Hermes revision has not been verified")
-    output = Path("artifacts/history-probe") / str(time.time_ns())
-    output.mkdir(parents=True)
+    output = args.output or Path("artifacts/history-probe") / str(time.time_ns())
+    output.mkdir(parents=True, exist_ok=True)
     output = output.resolve()
-    (output / "report.json").write_text(json.dumps({"passed": False, "phase": "running"}))
+    (output / "report.json").write_text(json.dumps({"passed": False, "runner_completed": False, "phase": "running"}))
     command = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--clearenv"]
     for directory in ("/usr", "/lib", "/lib64", "/bin", "/etc"):
         if Path(directory).exists():
@@ -87,6 +91,10 @@ def main():
     result = subprocess.run(command, timeout=90, capture_output=True, text=True)
     (output / "stdout.log").write_text(result.stdout)
     (output / "stderr.log").write_text(result.stderr)
+    report = json.loads((output / "report.json").read_text())
+    report["runner_completed"] = result.returncode == 0
+    report["passed"] = report.get("passed") is True and report["runner_completed"]
+    (output / "report.json").write_text(json.dumps(report, indent=2))
     print("History probe evidence:", output)
     if result.returncode:
         print(result.stderr, file=sys.stderr)
