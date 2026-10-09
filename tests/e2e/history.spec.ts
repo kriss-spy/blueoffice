@@ -2,6 +2,7 @@ import {
   test,
   expect,
   createAgent,
+  selectAgent,
   snapshot,
   frames,
   send,
@@ -269,6 +270,7 @@ test("pinned owned history metadata follows another tab's question and stop with
   ).toBeVisible();
   const other = await context.newPage();
   await other.goto(office.url);
+  await selectAgent(other, "Hina");
   await send(other, "Hina", "question");
   await expect(
     detail.getByText("Owned · Needs an answer · blueoffice", { exact: true }),

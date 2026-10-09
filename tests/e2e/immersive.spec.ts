@@ -112,3 +112,88 @@ test("an exact roster request reopens a closed conversation and focuses the reta
   expect(after.liveSessionId).toBe(before.liveSessionId);
   expect(await frames(after)).toEqual(commands);
 });
+
+test("long transcripts follow the latest on reload and retain a reading position while closed messages arrive", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  await send(page, "Hina", "long output");
+  await expect
+    .poll(async () => (await snapshot(page)).agents[0].work)
+    .toBe("completed");
+  const owner = (await snapshot(page)).agents[0];
+  const transcript = page.locator(".conversation-window .transcript");
+  const scroll = () =>
+    transcript.evaluate((node) => ({
+      top: node.scrollTop,
+      remaining: node.scrollHeight - node.clientHeight - node.scrollTop,
+    }));
+  await expect.poll(async () => (await scroll()).remaining).toBeLessThan(4);
+  expect((await scroll()).top).toBeGreaterThan(600);
+  await page.reload();
+  await expect(page.locator(".conversation-window")).not.toBeVisible();
+  await selectAgent(page, "Hina");
+  await expect(transcript).toContainText("FINAL_TAIL");
+  await expect.poll(async () => (await scroll()).remaining).toBeLessThan(4);
+  const latestTop = (await scroll()).top;
+  await transcript.hover();
+  await page.mouse.wheel(0, -600);
+  await expect
+    .poll(async () => (await scroll()).top)
+    .toBeLessThan(latestTop - 400);
+  const readingTop = (await scroll()).top;
+  expect(readingTop).toBeGreaterThan(0);
+  expect((await scroll()).remaining).toBeGreaterThan(80);
+  await page.getByRole("button", { name: "Close Hina", exact: true }).click();
+  await selectAgent(page, "Hina");
+  await expect
+    .poll(async () => Math.abs((await scroll()).top - readingTop))
+    .toBeLessThan(2);
+  await page.getByRole("button", { name: "Close Hina", exact: true }).click();
+  // A second client can deliver work while this conversation window is closed.
+  const response = await page.evaluate(
+    async ({ id, epoch, sessionId }) => {
+      const { csrf } = await (await fetch("/api/session")).json();
+      return (
+        await fetch(`/api/agents/${id}/prompt`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-BlueOffice-CSRF": csrf,
+          },
+          body: JSON.stringify({
+            commandId: crypto.randomUUID(),
+            target: { epoch, sessionId },
+            text: "history stream",
+          }),
+        })
+      ).status;
+    },
+    { id: owner.id, epoch: owner.epoch, sessionId: owner.liveSessionId },
+  );
+  expect(response).toBe(200);
+  await expect
+    .poll(async () => {
+      const agent = (await snapshot(page)).agents[0];
+      return (
+        agent.work === "completed" &&
+        !agent.busy &&
+        agent.messages.length > owner.messages.length
+      );
+    })
+    .toBe(true);
+  await expect(page.locator(".conversation-window")).not.toBeVisible();
+  await selectAgent(page, "Hina");
+  await expect
+    .poll(async () => Math.abs((await scroll()).top - readingTop))
+    .toBeLessThan(2);
+  const after = (await snapshot(page)).agents[0];
+  expect(after.id).toBe(owner.id);
+  expect(after.epoch).toBe(owner.epoch);
+  expect(after.liveSessionId).toBe(owner.liveSessionId);
+  expect(
+    (await frames(after)).filter((frame) => frame.method === "prompt.submit"),
+  ).toHaveLength(2);
+});
