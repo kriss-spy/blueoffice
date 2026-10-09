@@ -9,6 +9,11 @@ https://schaledb.com/
 
 ## assets
 
+https://bluearchive.wiki/wiki/Cafe_Presets
+https://bluearchive.wiki/wiki/Cafe/Furniture
+https://github.com/ZM-Kimu/Blue-Archive-Asset-Downloader
+https://github.com/kiraio-moe/Schale-Archive
+
 https://bluearchive.jp/fankit
 https://bluearchive.fandom.com/wiki/Blue_Archive/Gallery
 https://bluearchive.wiki/wiki/Yuuka/audio
