@@ -220,6 +220,24 @@ def task(prompt, generation):
     finish(generation)
 
 
+def fixture_control():
+    # Test-only exact file inside this disposable owned profile; no production hook.
+    control = profile / ".telemetry-failure-fixture"
+    while True:
+        try:
+            if control.read_text().strip() == "telemetry-failure":
+                control.unlink()
+                with write_lock:
+                    print("{malformed fixture telemetry", flush=True)
+        except FileNotFoundError:
+            pass
+        time.sleep(0.02)
+
+
+if os.environ.get("BLUEOFFICE_FIXTURE") == "1":
+    threading.Thread(target=fixture_control, daemon=True).start()
+
+
 event("gateway.ready", {"replay_epoch": "fixture-epoch"})
 for line in sys.stdin:
     frame = json.loads(line)

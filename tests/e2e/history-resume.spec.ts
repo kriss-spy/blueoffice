@@ -321,3 +321,113 @@ test("missing stored history rejects Resume through HTTP and preserves the pinne
     (await frames(after)).filter((f) => f.method === "session.create"),
   ).toHaveLength(1);
 });
+
+test("explicit Stop after idle telemetry failure enables keyboard New without replay or identity replacement", async ({
+  page,
+  office,
+}) => {
+  await page.goto(office.url);
+  await createAgent(page, "Hina");
+  const initial = (await snapshot(page)).agents[0];
+  expect(initial.lifecycle).toBe("ready");
+  expect(initial.busy).toBe(false);
+  const fresh = page.getByRole("button", {
+    name: "New conversation",
+    exact: true,
+  });
+  await expect(fresh).toBeEnabled();
+  const requests: {
+    commandId: string;
+    action: string;
+    expectedTarget: unknown;
+  }[] = [];
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname ===
+        `/api/agents/${initial.id}/conversation`
+    )
+      requests.push(request.postDataJSON());
+  });
+  await writeFile(
+    join(initial.profileHome, ".telemetry-failure-fixture"),
+    "telemetry-failure\n",
+    { mode: 0o600 },
+  );
+  await expect
+    .poll(async () => (await snapshot(page)).agents[0].work)
+    .toBe("unknown");
+  await expect
+    .poll(async () => (await snapshot(page)).agents[0].freshness)
+    .toBe("unknown");
+  await expect(fresh).toBeDisabled();
+  expect(requests).toHaveLength(0);
+  const stop = page.getByRole("button", { name: "Stop agent", exact: true });
+  await stop.focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => {
+      const a = (await snapshot(page)).agents[0];
+      return {
+        lifecycle: a.lifecycle,
+        freshness: a.freshness,
+        work: a.work,
+        busy: a.busy,
+      };
+    })
+    .toEqual({
+      lifecycle: "stopped",
+      freshness: "current",
+      work: "unknown",
+      busy: false,
+    });
+  await expect(fresh).toBeEnabled();
+  const stopped = (await snapshot(page)).agents[0];
+  expect(stopped.epoch).toBe(initial.epoch);
+  expect(stopped.liveSessionId).toBe(initial.liveSessionId);
+  expect(requests).toHaveLength(0);
+  expect(
+    (await frames(stopped)).filter((f) => f.method === "session.create"),
+  ).toHaveLength(1);
+  await fresh.focus();
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await snapshot(page)).agents[0].lifecycle)
+    .toBe("ready");
+  await expect
+    .poll(async () => (await snapshot(page)).agents[0].epoch)
+    .not.toBe(initial.epoch);
+  const renewed = (await snapshot(page)).agents[0];
+  expect({
+    id: renewed.id,
+    name: renewed.name,
+    profileHome: renewed.profileHome,
+    workspace: renewed.workspace,
+    avatar: renewed.avatar,
+    deskId: renewed.deskId,
+  }).toEqual({
+    id: initial.id,
+    name: initial.name,
+    profileHome: initial.profileHome,
+    workspace: initial.workspace,
+    avatar: initial.avatar,
+    deskId: initial.deskId,
+  });
+  expect(renewed.liveSessionId).not.toBe(initial.liveSessionId);
+  expect(renewed.storedSessionId).not.toBe(initial.storedSessionId);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({
+    action: "new",
+    expectedTarget: { epoch: initial.epoch, sessionId: initial.liveSessionId },
+  });
+  expect(
+    renewed.receipts.filter((r) => r.id === requests[0].commandId),
+  ).toHaveLength(1);
+  const wire = await frames(renewed);
+  expect(wire.filter((f) => f.method === "session.create")).toHaveLength(2);
+  expect(
+    wire.filter(
+      (f) => f.method === "prompt.submit" || f.method === "session.resume",
+    ),
+  ).toHaveLength(0);
+});

@@ -74,7 +74,10 @@ export function Chat({
         ? "Wait for this assistant to finish starting or stopping. Recover an uncertain runtime first."
         : agent.busy ||
             pending.length ||
-            ["working", "tool", "interrupting", "unknown"].includes(agent.work)
+            (agent.lifecycle === "ready" &&
+              ["working", "tool", "interrupting", "unknown"].includes(
+                agent.work,
+              ))
           ? "Finish or explicitly stop the current task before starting a new conversation."
           : "";
   useEffect(() => {
